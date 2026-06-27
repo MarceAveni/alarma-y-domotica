@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Alarma</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            color: #333;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 80%;
+            max-width: 600px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            border: none;
+            background-color: #333;
+            color: white;
+            cursor: pointer;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <h1>Control de Alarma</h1>
+
+    <div class="section">
+        <h2>Estado de Telemetría</h2>
+        <p><strong>Temperatura:</strong> <span id="Temperatura">Cargando...</span></p>
+        <p><strong>Humedad:</strong> <span id="Humedad">Cargando...</span></p>
+        <p><strong>Luz:</strong> <span id="Luz">Cargando...</span></p>
+        <p><strong>Movimientos:</strong> <span id="CuentaMov">Cargando...</span></p>
+        <p><strong>Cámaras:</strong> <span id="Camaras">Cargando...</span></p>
+        <p><strong>Sirena:</strong> <span id="Sirena">Cargando...</span></p>
+        <p><strong>Reflectores:</strong> <span id="Reflectores">Cargando...</span></p>
+        <p><strong>Luz Vereda:</strong> <span id="LuzVereda">Cargando...</span></p>
+    </div>
+
+    <div class="section">
+        <h2>Control de Actuadores</h2>
+        <button id="SirenaConf_0">Apagar Sirena</button>
+        <button id="SirenaConf_1">Encender Sirena</button>
+        <button id="SirenaConf_2">Sirena Automática</button>
+        <button id="ReflectoresConf_0">Apagar Reflectores</button>
+        <button id="ReflectoresConf_1">Encender Reflectores</button>
+        <button id="ReflectoresConf_2">Reflectores Automáticos</button>
+        <button id="LuzVeredaConf_0">Apagar Luz Vereda</button>
+        <button id="LuzVeredaConf_1">Encender Luz Vereda</button>
+        <button id="LuzVeredaConf_2">Luz Vereda Automática</button>
+        <button id="CamarasEn_true">Encender Cámaras</button>
+        <button id="CamarasEn_false">Apagar Cámaras</button>
+        <button id="Telemetria">Solicitar Telemetría</button>
+    </div>
+
+    <script>
+        const options = {
+            connectTimeout: 4000,
+            // Authentication
+            clientId: 'webClient',
+            username: 'Marce',
+            password: 'Aveni793',
+            keepalive: 60,
+            clean: true,
+        };
+
+        const WebSocket_URL = 'mqtt://mqtt.eclipseprojects.io:1883/';
+        const client = mqtt.connect(WebSocket_URL, options);
+
+        client.on('connect', () => {
+            console.log('Conectado al broker MQTT');
+            client.subscribe('BALH142N1788/Frente', function (err) {
+                if (!err) {
+                    console.log('Suscripción exitosa');
+                }
+            });
+        });
+
+        client.on('message', (topic, message) => {
+            const data = JSON.parse(message.toString());
+            if (data) {
+                document.getElementById('Temperatura').textContent = data.Temperatura ?? 'Desconocido';
+                document.getElementById('Humedad').textContent = data.Humedad ?? 'Desconocido';
+                document.getElementById('Luz').textContent = data.Luz ?? 'Desconocido';
+                document.getElementById('CuentaMov').textContent = data.Movimientos ?? 'Desconocido';
+                document.getElementById('Camaras').textContent = data.Camaras ? 'Encendidas' : 'Apagadas';
+                document.getElementById('Sirena').textContent = data.Sirena ? 'Encendida' : 'Apagada';
+                document.getElementById('Reflectores').textContent = data.Reflectores ? 'Encendidos' : 'Apagados';
+                document.getElementById('LuzVereda').textContent = data['Luz Vereda'] ? 'Encendida' : 'Apagada';
+            }
+        });
+
+        function sendConfig(key, value) {
+            const payload = {};
+            payload[key] = value;
+            client.publish('BALH142N1788/Aveni793', JSON.stringify(payload));
+        }
+
+        document.getElementById('SirenaConf_0').addEventListener('click', () => sendConfig('SirenaConf', 0));
+        document.getElementById('SirenaConf_1').addEventListener('click', () => sendConfig('SirenaConf', 1));
+        document.getElementById('SirenaConf_2').addEventListener('click', () => sendConfig('SirenaConf', 2));
+
+        document.getElementById('ReflectoresConf_0').addEventListener('click', () => sendConfig('ReflectoresConf', 0));
+        document.getElementById('ReflectoresConf_1').addEventListener('click', () => sendConfig('ReflectoresConf', 1));
+        document.getElementById('ReflectoresConf_2').addEventListener('click', () => sendConfig('ReflectoresConf', 2));
+
+        document.getElementById('LuzVeredaConf_0').addEventListener('click', () => sendConfig('LuzVeredaConf', 0));
+        document.getElementById('LuzVeredaConf_1').addEventListener('click', () => sendConfig('LuzVeredaConf', 1));
+        document.getElementById('LuzVeredaConf_2').addEventListener('click', () => sendConfig('LuzVeredaConf', 2));
+
+        document.getElementById('CamarasEn_true').addEventListener('click', () => sendConfig('CamarasEn', true));
+        document.getElementById('CamarasEn_false').addEventListener('click', () => sendConfig('CamarasEn', false));
+
+        document.getElementById('Telemetria').addEventListener('click', () => sendConfig('Telemetria', true));
+    </script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+	"folders": [
+		{
+			"name": "Control Wifi - Frente",
+			"path": "."
+		},
+		{
+			"path": "../Pagina Web - Control"
+		},
+		{
+			"path": "../../../../../Dashboard para PC"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"optional": "cpp",
+			"ostream": "cpp",
+			"ratio": "cpp",
+			"system_error": "cpp",
+			"array": "cpp",
+			"functional": "cpp",
+			"tuple": "cpp",
+			"type_traits": "cpp",
+			"utility": "cpp",
+			"variant": "cpp"
+		},
+		"liveServer.settings.multiRootWorkspaceName": "Pagina Web - Control"
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"name": "Control ESP32 - Patio",
+			"path": "Control integrado - Patio/Control ESP32 - Patio"
+		},
+		{
+			"name": "Control Wifi - Frente",
+			"path": "Control integrado - Frente/Control Wifi - Frente"
+		}
+	]
+}

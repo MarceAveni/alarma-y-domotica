@@ -1,0 +1,287 @@
+APP de control:
+Necesito programar una App para mi celular, para controlar y recibir información de una placa ESP8266-07 por medio de MQTT.
+
+Características del celular:
+Motorola Edge 30, con Android 13.
+
+Firmware de la placa ESP8266-07:
+
+#include <Arduino.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+#include <PubSubClient.h>
+#include <DHT.h>
+#include <DHT_U.h>
+
+// Definición de pines
+#define SenTyH 14
+#define MovPIR2 13
+#define MovPIR1 12
+#define SalidaBz 16
+#define Reflectores 1
+#define Sirena 3
+#define LuzVereda 5
+#define Camaras 4
+int fotoPin = A0;
+
+// Definición de variables y constantes
+const char *ssid = "pocha";
+const char *password = "Vale07Marce05";
+const char *mqttServer = "broker.emqx.io";
+const int mqttPort = 1883;
+const char *mqttUser = "Marce";  // Reemplaza con tu usuario MQTT
+const char *mqttPassword = "Aveni793";  // Reemplaza con tu contraseña MQTT
+
+int CuentaMov = 0;
+char Cuenta[46];
+char Temp[20];
+char Hum[20];
+char Luz[25];
+bool flagMov = false;
+int var = 0;
+char datos[40];
+int TEMPERATURA = 0;
+int HUMEDAD = 0;
+int SirenaConf = 0;       //0 = Siempre apagada, 1 = Siempre encendida, 2 = Automático
+bool CamarasEn = false;    //false = Apagadas (para resetearlas), true = Encendidas
+int ReflectoresConf = 0;  //0 = Siempre apagados, 1 = Siempre encendidos, 2 = Automático
+int LuzVeredaConf = 0;    //0 = Siempre apagada, 1 = Siempre encendida, 2 = Automático
+bool PIR1En = true;       //flag que habilita el sensor PIR1
+bool PIR2En = true;       //flag que habilita el sensor PIR2
+
+unsigned long previousMillis = 0;
+const unsigned long interval = 10000;
+
+WiFiClient esp8266Client;
+PubSubClient mqttClient(esp8266Client);
+
+DHT dht(SenTyH, DHT11);
+
+void callback(char *topic, byte *payload, unsigned int length) {
+  // Serial.print("Mensaje recibido [");
+  // Serial.print(topic);
+  // Serial.print("] ");
+  char payload_string[length + 1];
+  memcpy(payload_string, payload, length);
+  payload_string[length] = '\0';
+
+  int value = atoi(payload_string);   // Convertir el payload a un entero si es necesario
+
+  // Procesar el mensaje basado en el tema
+  if (strcmp(topic, "Iluminacion/Reflectores") == 0) {
+    ReflectoresConf = value;  // Controlar Reflectores
+  } else if (strcmp(topic, "Iluminacion/Vereda") == 0) {
+    LuzVeredaConf = value;  // Controlar Luces de Vereda
+  } else if (strcmp(topic, "Alarma/Sirena") == 0) {
+    SirenaConf = value;  // Controlar Sirena
+  } else if (strcmp(topic, "Alarma/Camaras") == 0) {
+    CamarasEn = value;  // Controlar Camaras
+  }
+}
+
+void reconnect() {
+  while (!mqttClient.connected()) {
+    // Serial.print("Intentando conectarse MQTT...");
+    if (mqttClient.connect("esp8266Client", mqttUser, mqttPassword)) {
+      // Serial.println("Conectado");
+      mqttClient.subscribe("Iluminacion/Reflectores");
+      mqttClient.subscribe("Iluminacion/Vereda");
+      mqttClient.subscribe("Alarma/Sirena");
+      mqttClient.subscribe("Alarma/Camaras");
+    } else {
+      // Serial.print("Fallo, rc=");
+      // Serial.print(mqttClient.state());
+      // Serial.println(" intentar de nuevo en 5 segundos");
+      delay(5000);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  // Serial.println("Booting");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    // Serial.println("Connection Failed! Rebooting...");
+    delay(5000);
+    ESP.restart();
+  }
+
+  ArduinoOTA.setHostname("Control_Frente");
+  ArduinoOTA.setPassword("admin");
+  ArduinoOTA.onStart([]() {
+    String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
+    // Serial.println("Start updating " + type);
+    digitalWrite(Reflectores, HIGH);
+    digitalWrite(Sirena, HIGH);
+    digitalWrite(LuzVereda, HIGH);
+    digitalWrite(Camaras, HIGH);
+    digitalWrite(SalidaBz, HIGH);
+    delay(250);
+    digitalWrite(SalidaBz, LOW);
+  });
+
+  ArduinoOTA.onEnd([]() {
+    // Serial.println("\nEnd");
+    digitalWrite(Reflectores, HIGH);
+    digitalWrite(Sirena, HIGH);
+    digitalWrite(LuzVereda, HIGH);
+    digitalWrite(Camaras, HIGH);
+    CuentaMov = 0;
+    digitalWrite(SalidaBz, HIGH);
+    delay(250);
+    digitalWrite(SalidaBz, LOW);
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    // Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+    // Serial.printf("Error[%u]: ", error);
+    if (error == OTA_AUTH_ERROR) {
+      // Serial.println("Auth Failed");
+    } else if (error == OTA_BEGIN_ERROR) {
+      // Serial.println("Begin Failed");
+    } else if (error == OTA_CONNECT_ERROR) {
+      // Serial.println("Connect Failed");
+    } else if (error == OTA_RECEIVE_ERROR) {
+      // Serial.println("Receive Failed");
+    } else if (error == OTA_END_ERROR) {
+      // Serial.println("End Failed");
+    }
+  });
+
+  ArduinoOTA.begin();
+  // Serial.println("Ready");
+  // Serial.print("IP address: ");
+  // Serial.println(WiFi.localIP());
+
+  pinMode(MovPIR1, INPUT);
+  pinMode(MovPIR2, INPUT);
+  pinMode(SalidaBz, OUTPUT);
+  pinMode(Reflectores, OUTPUT);
+  pinMode(Sirena, OUTPUT);
+  pinMode(LuzVereda, OUTPUT);
+  pinMode(Camaras, OUTPUT);
+
+  mqttClient.setServer(mqttServer, mqttPort);
+  mqttClient.setCallback(callback);
+
+  digitalWrite(SalidaBz, LOW);
+  digitalWrite(Reflectores, HIGH);
+  digitalWrite(Sirena, HIGH);
+  digitalWrite(LuzVereda, HIGH);
+  digitalWrite(Camaras, HIGH);
+
+  dht.begin();
+  delay(2000);
+
+}
+
+void loop() {
+  ArduinoOTA.handle();
+
+  if (!mqttClient.connected()) {
+    reconnect();
+  }
+  mqttClient.loop();
+
+  digitalWrite(SalidaBz, LOW);
+
+  if (digitalRead(MovPIR1) && digitalRead(MovPIR2)) flagMov = false;
+
+  if (!digitalRead(MovPIR1) && !flagMov) {
+    flagMov = true;
+    mqttClient.publish("Movimiento/PIR1", "Movimiento Detectado!!!");
+    CuentaMov++;
+    sprintf(Cuenta, "Cant. de movimientos detectados: %d ", CuentaMov);
+    digitalWrite(SalidaBz, HIGH);
+    delay(500);
+    digitalWrite(SalidaBz, LOW);
+  }
+
+  if (!digitalRead(MovPIR2) && !flagMov) {
+    flagMov = true;
+    mqttClient.publish("Movimiento/PIR2", "Movimiento Detectado!!!");
+    CuentaMov++;
+    sprintf(Cuenta, "Cant. de movimientos detectados: %d ", CuentaMov);
+    digitalWrite(SalidaBz, HIGH);
+    delay(500);
+    digitalWrite(SalidaBz, LOW);
+  }
+
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+    TEMPERATURA = dht.readTemperature();
+    if (isnan(TEMPERATURA)) {
+      TEMPERATURA = -100;
+    }
+    sprintf(Temp, "Temperatura: %d ", TEMPERATURA);
+    mqttClient.publish("Ambiente/Temp", Temp);
+
+    HUMEDAD = dht.readHumidity();
+    if (isnan(HUMEDAD)) {
+      HUMEDAD = -1;
+    }
+    sprintf(Hum, "Humedad: %d ", HUMEDAD);
+    mqttClient.publish("Ambiente/Hum", Hum);
+
+    int fotoval = analogRead(fotoPin);
+    sprintf(Luz, "Es de %s: %d", (fotoval < 500) ? "día" : "noche", fotoval);
+    mqttClient.publish("Ambiente/Luz", Luz);
+
+    mqttClient.publish("Movimiento/PIRc", Cuenta);
+  }
+
+  if (ReflectoresConf == 0) {
+    digitalWrite(Reflectores, HIGH);
+  } else if (ReflectoresConf == 1) {
+    digitalWrite(Reflectores, LOW);
+  }
+
+  if (SirenaConf == 0) {
+    digitalWrite(Sirena, HIGH);
+  } else if (SirenaConf == 1) {
+    digitalWrite(Sirena, LOW);
+  }
+
+  if (LuzVeredaConf == 0) {
+    digitalWrite(LuzVereda, HIGH);
+  } else if (LuzVeredaConf == 1) {
+    digitalWrite(LuzVereda, LOW);
+  }
+
+  digitalWrite(Camaras, CamarasEn == 1 ? LOW : HIGH);
+
+}
+
+
+Características que debe tener la App:
+- Debe tener interfaz gráfica.
+- En la pantalla principal, debe mostrar Termperatura, Humedad y nivel de Luz (datos que proviene de la placa ESP8266-07).
+También un botón de pánico que permita encender o apagar la sirena de la alarma.
+-En otra pantalla, debe registrar los avisos de cuando se registra movimiento de cada uno de los sensores PIR, pudiendo elegir un día completo para ver. También que haya una casilla de verificación o similar,
+que permita habilitar o deshabilitar los sensores en forma individual para que lleguen o no las alarmas de movimiento (esto es por si un sensor está roto o falla, poder deshabilitarlo).
+-En otra panalla, Tiene que estar un indicador del estado de las luces o camaras y la sirena. También tienen que haber algún botón o similar para comandar las luces o cámaras, con estas carácterísticas: Para los reflectores y la luz de vereda tres opciones (Apagados, Encendidos, Automáticos),
+Para las cámaras dos opciones (Encendidas o Apagadas), Para la sirena dos opciones (Automática o Apagada).
+
+Algo a tener en cuenta:
+Necesito implementar algunas funciones mas en el firmware, pero es importante que la App ya contemple las funciones que necesito, aunque no estén aún implementadas en la placa del ESP.
+
+El entorno de programación que voy a usar es el Visual Estudio Code
+Para el Firmware de la placa uso el Platformio
+También tengo instalado Android Studio Koala 2024.1.1 Patch 1, con versión de Kotlin 1.9.20
+
+Detallame todas las cosas que voy a necesitar, si hacen falta, como por ejemplo: instalarme librerías, descargar algún software (debe ser gratis) y el paso a paso para poner todo en marcha.
+¿Necesitas información extra a la que ya te pasé, para poder darme una buena solución integral para llegar a la App que necesito?
+
+No me des un ejemplo, dame el paso a paso completo desde la generación del proyecto en Andoid Studio, hasta todos los códigos necesarios para que la aplicación esté completa. El nombre del proyecto puede ser "Alarma y control - Frente" 
+
+Por último, si es necesario, también podes decirme como modificar el Firmware del ESP8266-07 para que funcione todo correctamente.
+
+También necesito que me des el paso a paso para generar el archivo .apk para instalar en mi teléfono.
