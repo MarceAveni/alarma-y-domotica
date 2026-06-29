@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <Ticker.h>
 #include <ESP8266WebServer.h> // Librería para servidor HTTP
+#include <EEPROM.h>
 #define MQTT_MAX_PACKET_SIZE 1024
 
 // Definición de pines
@@ -71,20 +72,95 @@ PubSubClient mqttClient(esp8266Client);
 DHT dht(SenTyH, DHT11);
 ESP8266WebServer server(80); // Inicializa el servidor HTTP en el puerto 80
 
+// --- PERSISTENCIA EEPROM ---
+const uint32_t EEPROM_SIGNATURE = 0x55AA7788;
+
+struct Config {
+  uint32_t signature;
+  int SirenaConf;
+  int ReflectoresConf;
+  int LuzVeredaConf;
+  bool CamarasEn;
+  int intervalData;
+  int movTime;
+  int ValorNoche;
+  int histeresisLuz;
+  int sirenaTime;
+  int refTime;
+  int movRst;
+  bool PIR1En;
+  bool PIR2En;
+} config;
+
+void loadConfig() {
+  EEPROM.begin(sizeof(Config));
+  EEPROM.get(0, config);
+  if (config.signature != EEPROM_SIGNATURE) {
+    // Configuración por defecto si la firma no coincide
+    config.signature = EEPROM_SIGNATURE;
+    config.SirenaConf = 0;
+    config.ReflectoresConf = 2;
+    config.LuzVeredaConf = 0;
+    config.CamarasEn = true;
+    config.intervalData = 60;
+    config.movTime = 7;
+    config.ValorNoche = 500;
+    config.histeresisLuz = 300;
+    config.sirenaTime = 3;
+    config.refTime = 300;
+    config.movRst = 60;
+    config.PIR1En = false;
+    config.PIR2En = false;
+    
+    EEPROM.put(0, config);
+    EEPROM.commit();
+  }
+  
+  // Asignar variables globales
+  SirenaConf = config.SirenaConf;
+  ReflectoresConf = config.ReflectoresConf;
+  LuzVeredaConf = config.LuzVeredaConf;
+  CamarasEn = config.CamarasEn;
+  intervalData = config.intervalData;
+  movTime = config.movTime;
+  ValorNoche = config.ValorNoche;
+  histeresisLuz = config.histeresisLuz;
+  sirenaTime = config.sirenaTime;
+  refTime = config.refTime;
+  movRst = config.movRst;
+  PIR1En = config.PIR1En;
+  PIR2En = config.PIR2En;
+}
+
+void saveConfig() {
+  config.SirenaConf = SirenaConf;
+  config.ReflectoresConf = ReflectoresConf;
+  config.LuzVeredaConf = LuzVeredaConf;
+  config.CamarasEn = CamarasEn;
+  config.intervalData = intervalData;
+  config.movTime = movTime;
+  config.ValorNoche = ValorNoche;
+  config.histeresisLuz = histeresisLuz;
+  config.sirenaTime = sirenaTime;
+  config.refTime = refTime;
+  config.movRst = movRst;
+  config.PIR1En = PIR1En;
+  config.PIR2En = PIR2En;
+  
+  EEPROM.put(0, config);
+  EEPROM.commit();
+}
+
+// --- CALLBACK MQTT ---
 void callback(char *topic, byte *payload, unsigned int length)
 {
-  // Crea un buffer para almacenar el mensaje JSON
   char payload_string[length + 1];
   memcpy(payload_string, payload, length);
   payload_string[length] = '\0'; // Terminar la cadena con NULL
 
-  // Crea un objeto JSON usando ArduinoJson
   StaticJsonDocument<800> doc;
-
-  // Intenta parsear el payload como JSON
   DeserializationError error = deserializeJson(doc, payload_string);
   
-  // Verifica si hubo errores en el parsing
   if (error)
   {
     mqttClient.publish("BALH142N1788/Frente", error.c_str());
@@ -102,21 +178,26 @@ void callback(char *topic, byte *payload, unsigned int length)
     return;
   }
 
-  // Extrae los valores del JSON y asigna a las variables correspondientes
-  if (doc.containsKey("ReflectoresConf"))   ReflectoresConf = doc["ReflectoresConf"];
-  if (doc.containsKey("LuzVeredaConf"))     LuzVeredaConf = doc["LuzVeredaConf"];
-  if (doc.containsKey("SirenaConf"))        SirenaConf = doc["SirenaConf"];
-  if (doc.containsKey("CamarasEn"))         CamarasEn = doc["CamarasEn"];
-  if (doc.containsKey("intervalData"))      intervalData = doc["intervalData"];
-  if (doc.containsKey("movTime"))           movTime = doc["movTime"];
-  if (doc.containsKey("ValorNoche"))        ValorNoche = doc["ValorNoche"];
-  if (doc.containsKey("HisteresisLuz"))     histeresisLuz = doc["HisteresisLuz"];
-  if (doc.containsKey("sirenaTime"))        sirenaTime = doc["sirenaTime"];
-  if (doc.containsKey("refTime"))           refTime = doc["refTime"];
-  if (doc.containsKey("movRst"))            movRst = doc["movRst"];
-  if (doc.containsKey("PIR1En"))            PIR1En = doc["PIR1En"];
-  if (doc.containsKey("PIR2En"))            PIR2En = doc["PIR2En"];
-  if (doc.containsKey("Telemetria"))        Telemetria = doc["Telemetria"];
+  bool configChanged = false;
+
+  if (doc.containsKey("ReflectoresConf"))   { ReflectoresConf = doc["ReflectoresConf"]; configChanged = true; }
+  if (doc.containsKey("LuzVeredaConf"))     { LuzVeredaConf = doc["LuzVeredaConf"]; configChanged = true; }
+  if (doc.containsKey("SirenaConf"))        { SirenaConf = doc["SirenaConf"]; configChanged = true; }
+  if (doc.containsKey("CamarasEn"))         { CamarasEn = doc["CamarasEn"]; configChanged = true; }
+  if (doc.containsKey("intervalData"))      { intervalData = doc["intervalData"]; configChanged = true; }
+  if (doc.containsKey("movTime"))           { movTime = doc["movTime"]; configChanged = true; }
+  if (doc.containsKey("ValorNoche"))        { ValorNoche = doc["ValorNoche"]; configChanged = true; }
+  if (doc.containsKey("HisteresisLuz"))     { histeresisLuz = doc["HisteresisLuz"]; configChanged = true; }
+  if (doc.containsKey("sirenaTime"))        { sirenaTime = doc["sirenaTime"]; configChanged = true; }
+  if (doc.containsKey("refTime"))           { refTime = doc["refTime"]; configChanged = true; }
+  if (doc.containsKey("movRst"))            { movRst = doc["movRst"]; configChanged = true; }
+  if (doc.containsKey("PIR1En"))            { PIR1En = doc["PIR1En"]; configChanged = true; }
+  if (doc.containsKey("PIR2En"))            { PIR2En = doc["PIR2En"]; configChanged = true; }
+  if (doc.containsKey("Telemetria"))        { Telemetria = doc["Telemetria"]; }
+
+  if (configChanged) {
+    saveConfig();
+  }
 }
 
 void enviarDatos()
@@ -151,7 +232,7 @@ void enviarDatos()
   size_t n = serializeJson(doc, buffer, sizeof(buffer));
 
   // Publicar el JSON en el topic
-  mqttClient.publish("BALH142N1788/Frente", buffer, n);     // BA = Buenos Aires, LH = Los Hornos, Calle 142 N1788 - Frente
+  mqttClient.publish("BALH142N1788/Frente", buffer, n);
   Telemetria = false;
 }
 
@@ -244,35 +325,66 @@ void actuadores()
     luzVeredaST = false;
   }
 
-  digitalWrite(Camaras, CamarasEn ? HIGH : LOW); // Para las cámaras se usa el NC del relé, pero el módulo de relé es de lógica inversa
+  digitalWrite(Camaras, CamarasEn ? HIGH : LOW);
 }
 
-void reconnect()
-{
-  if (!mqttClient.connected())
-  {
-    ArduinoOTA.handle();
-    // Serial.print("Intentando conectarse MQTT...");
-    if (mqttClient.connect("esp8266Client", mqttUser, mqttPassword))
-    {
-      //  Serial.println("Conectado");
-      mqttClient.subscribe("BALH142N1788/Aveni793");
-    }
-    else
-    {
-      //  Serial.print("Fallo, rc=");
-      //  Serial.print(mqttClient.state());
-      //  Serial.println(" intentar de nuevo en 5 segundos");
-      delay(5000);
+// --- GESTIÓN WIFI Y MQTT NO BLOQUEANTE ---
+unsigned long lastWiFiCheck = 0;
+unsigned long wifiDisconnectTime = 0;
+
+void handleWiFi() {
+  unsigned long now = millis();
+  if (now - lastWiFiCheck >= 1000) {
+    lastWiFiCheck = now;
+    if (WiFi.status() == WL_CONNECTED) {
+      wifiDisconnectTime = 0; // Conectado, resetear tiempo de desconexión
+    } else {
+      if (wifiDisconnectTime == 0) {
+        wifiDisconnectTime = now; // Guardar momento inicial de la desconexión
+      } else if (now - wifiDisconnectTime > 300000) { // 5 minutos
+        // Reiniciar si pasa demasiado tiempo sin conexión
+        ESP.restart();
+      }
     }
   }
 }
 
+unsigned long lastMqttRetry = 0;
+String mqttClientId = "";
+
+void generateMqttClientId() {
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  char clientBuf[30];
+  sprintf(clientBuf, "esp8266_Frente_%02x%02x%02x", mac[3], mac[4], mac[5]);
+  mqttClientId = String(clientBuf);
+}
+
+void handleMqtt() {
+  if (WiFi.status() != WL_CONNECTED) return; // Si no hay wifi, no intentar conectar
+  
+  if (!mqttClient.connected()) {
+    unsigned long now = millis();
+    if (now - lastMqttRetry >= 10000) { // Reintentar cada 10 segundos
+      lastMqttRetry = now;
+      if (mqttClientId == "") {
+        generateMqttClientId();
+      }
+      if (mqttClient.connect(mqttClientId.c_str(), mqttUser, mqttPassword)) {
+        mqttClient.subscribe("BALH142N1788/Aveni793");
+      }
+    }
+  } else {
+    mqttClient.loop();
+  }
+}
+
+// --- HTTP SERVER HANDLERS ---
 void handleRoot()
 {
     String html = "<html><head><title>Control ESP8266</title></head><body>";
     html += "<h1>Estado Actual</h1>";
-    html += "<p>Temperatura: " + String(TEMPERATURA) + "°C</p>";
+    html += "<p>Temperatura: " + String(TEMPERATURA) + "&deg;C</p>";
     html += "<p>Humedad: " + String(HUMEDAD) + "%</p>";
     html += "<p>Luz: " + String(Luz) + "</p>";
     html += "<p>Movimientos Detectados: " + String(CuentaMov) + "</p>";
@@ -297,50 +409,54 @@ void handleNotFound()
 
 void handleToggleSirena() {
   SirenaConf = (SirenaConf == 2) ? 0 : 2;
+  saveConfig();
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "Redirigiendo...");
 }
 
 void handleToggleReflectores() {
   ReflectoresConf = (ReflectoresConf == 2) ? 0 : 2;
+  saveConfig();
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "Redirigiendo...");
 }
 
 void handleToggleLuzVereda() {
   LuzVeredaConf = (LuzVeredaConf == 1) ? 0 : 1;
+  saveConfig();
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "Redirigiendo...");
 }
 
 void handleTogglePIR1() {
   PIR1En = (PIR1En == 1) ? 0 : 1;
+  saveConfig();
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "Redirigiendo...");
 }
 
 void handleTogglePIR2() {
   PIR2En = (PIR2En == 1) ? 0 : 1;
+  saveConfig();
   server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "Redirigiendo...");
 }
 
+// --- SETUP ---
 void setup()
 {
+  // Cargar configuración de la EEPROM
+  loadConfig();
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, wifiPassword);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED)
-  {
-    delay(5000);
-    ESP.restart();
-  }
+  // Conexión no bloqueante: se gestionará en el handleWiFi() de fondo
 
   ArduinoOTA.setHostname("Control_Frente");
   ArduinoOTA.setPassword("Aveni793");
 
   ArduinoOTA.onStart([]() 
   {
-    String type = (ArduinoOTA.getCommand() == U_FLASH) ? "sketch" : "filesystem";
     digitalWrite(Reflectores, HIGH);
     digitalWrite(Sirena, HIGH);
     digitalWrite(LuzVereda, HIGH);
@@ -352,7 +468,6 @@ void setup()
 
   ArduinoOTA.onEnd([]()
   {
-    //Serial.println("\nEnd");
     digitalWrite(Reflectores, HIGH);
     digitalWrite(Sirena, HIGH);
     digitalWrite(LuzVereda, HIGH);
@@ -369,21 +484,7 @@ void setup()
 
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {});
 
-  ArduinoOTA.onError([](ota_error_t error)
-  {
-    //Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) {
-      //Serial.println("Auth Failed");
-    } else if (error == OTA_BEGIN_ERROR) {
-      //Serial.println("Begin Failed");
-    } else if (error == OTA_CONNECT_ERROR) {
-      //Serial.println("Connect Failed");
-    } else if (error == OTA_RECEIVE_ERROR) {
-      //Serial.println("Receive Failed");
-    } else if (error == OTA_END_ERROR) {
-      //Serial.println("End Failed");
-    } 
-  });
+  ArduinoOTA.onError([](ota_error_t error) {});
 
   ArduinoOTA.begin();
 
@@ -404,11 +505,9 @@ void setup()
   pinMode(LuzVereda, OUTPUT);
   pinMode(Camaras, OUTPUT);
 
+  // Inicializar actuadores al estado guardado en la carga de configuración
+  actuadores();
   digitalWrite(SalidaBz, LOW);
-  digitalWrite(Reflectores, HIGH);
-  digitalWrite(Sirena, HIGH);
-  digitalWrite(LuzVereda, HIGH);
-  digitalWrite(Camaras, HIGH);
 
   dht.begin();
   
@@ -421,20 +520,19 @@ void setup()
   delay(2000);
 }
 
+// --- LOOP ---
 void loop()
 {
   ArduinoOTA.handle();
 
-  if (!mqttClient.connected()) reconnect();
-
-  mqttClient.loop();
+  handleWiFi();
+  handleMqtt();
 
   server.handleClient();
 
   digitalWrite(SalidaBz, LOW);
 
-  if (safeRead(movCount) == 0 && safeRead(sirenaCount) == 0 && (!digitalRead(MovPIR1) || !PIR1En) && (!digitalRead(MovPIR2) || !PIR2En)) flagMov = false; // Me permite resetaer después de los movTime segundos del primer movimiento siempre que no esté sonando la sirena
-
+  if (safeRead(movCount) == 0 && safeRead(sirenaCount) == 0 && (!digitalRead(MovPIR1) || !PIR1En) && (!digitalRead(MovPIR2) || !PIR2En)) flagMov = false; 
 
   if (PIR1En && digitalRead(MovPIR1) && !flagMov)
   {
@@ -475,6 +573,5 @@ void loop()
 
   actuadores();
 
-  if (safeRead(movRstCount) == 0) CuentaMov = 0;     // La cuenta de cantidad de movimientos se resetea luego de movRST segundos
-
+  if (safeRead(movRstCount) == 0) CuentaMov = 0; 
 }
