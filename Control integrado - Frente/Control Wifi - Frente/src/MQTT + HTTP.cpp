@@ -379,67 +379,704 @@ void handleMqtt() {
   }
 }
 
-// --- HTTP SERVER HANDLERS ---
-void handleRoot()
-{
-    String html = "<html><head><title>Control ESP8266</title></head><body>";
-    html += "<h1>Estado Actual</h1>";
-    html += "<p>Temperatura: " + String(TEMPERATURA) + "&deg;C</p>";
-    html += "<p>Humedad: " + String(HUMEDAD) + "%</p>";
-    html += "<p>Luz: " + String(Luz) + "</p>";
-    html += "<p>Movimientos Detectados: " + String(CuentaMov) + "</p>";
-    html += "<p>Estado de Alarma: " + String(SirenaConf) + "</p>";
-    html += "<p>Estado de Alarma vieja: " + String(LuzVeredaConf) + "</p>";
-    html += "<p>Estado PIR1: " + String(PIR1En) + "</p>";
-    html += "<p>Estado PIR2: " + String(PIR2En) + "</p>";
-    html += "<h2>Control</h2>";
-    html += "<form action='/toggleSirena'><button type='submit'>Alternar Sirena</button></form>";
-    html += "<form action='/toggleReflectores'><button type='submit'>Alternar Reflectores</button></form>";
-    html += "<form action='/toggleLuzVereda'><button type='submit'>Alarma vieja</button></form>";
-    html += "<form action='/togglePIR1'><button type='submit'>PIR1</button></form>";
-    html += "<form action='/togglePIR2'><button type='submit'>PIR2</button></form>";
-    html += "</body></html>";
-    server.send(200, "text/html", html);
+// --- CONTENIDO HTML DEL DASHBOARD (PROGMEM) ---
+const char INDEX_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Panel de Control Local Alarma Frente">
+    <title>Control Frente - Local Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --accent-cyan: #06b6d4;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-orange: #f97316;
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.1) 0px, transparent 50%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        header {
+            width: 100%;
+            max-width: 1000px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding: 12px 20px;
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+        }
+
+        h1 {
+            font-size: 1.35rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #fff 0%, var(--text-muted) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.25);
+            padding: 6px 14px;
+            border-radius: 9999px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--accent-red);
+            box-shadow: 0 0 8px var(--accent-red);
+            transition: all 0.3s ease;
+        }
+
+        .status-dot.online {
+            background-color: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+        }
+
+        .grid {
+            width: 100%;
+            max-width: 1000px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            padding: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #fff;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            padding-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .telemetry-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+        }
+
+        .telemetry-label {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .telemetry-value {
+            font-weight: 600;
+            font-size: 1.05rem;
+            color: #fff;
+        }
+
+        /* Toggles/Checks */
+        .toggle-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2px 0;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #334155;
+            transition: .3s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        /* Segmented buttons */
+        .segmented-control {
+            display: flex;
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 3px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .segmented-control input {
+            display: none;
+        }
+
+        .segmented-control label {
+            flex: 1;
+            text-align: center;
+            padding: 8px 0;
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 9px;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .segmented-control input:checked + label {
+            background: var(--primary);
+            color: #fff;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2);
+        }
+
+        /* Inputs */
+        .input-group {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            align-items: center;
+            gap: 12px;
+            padding: 2px 0;
+        }
+
+        .input-group label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .input-group input {
+            background: #1e293b;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: #fff;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            text-align: right;
+            width: 100%;
+            transition: border-color 0.2s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        /* Status Dot Indicator for Output states */
+        .indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .indicator-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #475569;
+            transition: all 0.2s;
+        }
+
+        .indicator-dot.active {
+            background-color: var(--accent-cyan);
+            box-shadow: 0 0 10px var(--accent-cyan);
+        }
+        
+        .indicator-dot.active-red {
+            background-color: var(--accent-red);
+            box-shadow: 0 0 10px var(--accent-red);
+        }
+        
+        .indicator-dot.active-orange {
+            background-color: var(--accent-orange);
+            box-shadow: 0 0 10px var(--accent-orange);
+        }
+
+        /* Toast notifications */
+        #toast {
+            visibility: hidden;
+            min-width: 250px;
+            background-color: rgba(30, 41, 59, 0.95);
+            border: 1px solid var(--accent-green);
+            color: #fff;
+            text-align: center;
+            border-radius: 12px;
+            padding: 16px;
+            position: fixed;
+            z-index: 1000;
+            bottom: 30px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            transition: opacity 0.3s ease, visibility 0.3s;
+            opacity: 0;
+            font-weight: 500;
+        }
+
+        #toast.show {
+            visibility: visible;
+            opacity: 1;
+        }
+        
+        footer {
+            margin-top: auto;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            padding: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Control Frente</h1>
+        <div class="status-badge">
+            <span id="conn-dot" class="status-dot"></span>
+            <span id="conn-text">Desconectado</span>
+        </div>
+    </header>
+
+    <div class="grid">
+        <!-- Telemetry Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>Telemetría</span>
+            </div>
+            <div class="telemetry-row">
+                <span class="telemetry-label">Temperatura</span>
+                <span id="val-temp" class="telemetry-value">--°C</span>
+            </div>
+            <div class="telemetry-row">
+                <span class="telemetry-label">Humedad</span>
+                <span id="val-hum" class="telemetry-value">--%</span>
+            </div>
+            <div class="telemetry-row">
+                <span class="telemetry-label">Luz Ambiente</span>
+                <span id="val-luz" class="telemetry-value">--</span>
+            </div>
+            <div class="telemetry-row">
+                <span class="telemetry-label">Movimientos Totales</span>
+                <span id="val-mov" class="telemetry-value">--</span>
+            </div>
+        </div>
+
+        <!-- Actuators Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>Estado de Actuadores</span>
+            </div>
+            <div class="telemetry-row">
+                <span class="telemetry-label">Sirena</span>
+                <div class="indicator">
+                    <span id="st-sirena" class="indicator-dot"></span>
+                    <span id="txt-sirena">Apagada</span>
+                </div>
+            </div>
+            <div class="telemetry-row">
+                <span class="telemetry-label">Reflectores</span>
+                <div class="indicator">
+                    <span id="st-reflectores" class="indicator-dot"></span>
+                    <span id="txt-reflectores">Apagados</span>
+                </div>
+            </div>
+            <div class="telemetry-row">
+                <span class="telemetry-label">Luz Vereda</span>
+                <div class="indicator">
+                    <span id="st-vereda" class="indicator-dot"></span>
+                    <span id="txt-vereda">Apagada</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>Controles Manuales</span>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="telemetry-label">Habilitar PIR 1</span>
+                <label class="switch">
+                    <input type="checkbox" id="ctrl-pir1" onchange="sendConfig('pir1_en', this.checked)">
+                    <span class="slider"></span>
+                </label>
+            </div>
+            
+            <div class="toggle-container">
+                <span class="telemetry-label">Habilitar PIR 2</span>
+                <label class="switch">
+                    <input type="checkbox" id="ctrl-pir2" onchange="sendConfig('pir2_en', this.checked)">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="toggle-container">
+                <span class="telemetry-label">Alimentación Cámaras</span>
+                <label class="switch">
+                    <input type="checkbox" id="ctrl-camaras" onchange="sendConfig('camaras_en', this.checked)">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <span class="telemetry-label">Modo Reflectores</span>
+                <div class="segmented-control">
+                    <input type="radio" id="ref-0" name="ref_mode" value="0" onchange="sendConfig('reflectores_conf', 0)">
+                    <label for="ref-0">OFF</label>
+                    <input type="radio" id="ref-1" name="ref_mode" value="1" onchange="sendConfig('reflectores_conf', 1)">
+                    <label for="ref-1">ON</label>
+                    <input type="radio" id="ref-2" name="ref_mode" value="2" onchange="sendConfig('reflectores_conf', 2)">
+                    <label for="ref-2">AUTO</label>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <span class="telemetry-label">Modo Sirena</span>
+                <div class="segmented-control">
+                    <input type="radio" id="sir-0" name="sir_mode" value="0" onchange="sendConfig('sirena_conf', 0)">
+                    <label for="sir-0">OFF</label>
+                    <input type="radio" id="sir-1" name="sir_mode" value="1" onchange="sendConfig('sirena_conf', 1)">
+                    <label for="sir-1">ON</label>
+                    <input type="radio" id="sir-2" name="sir_mode" value="2" onchange="sendConfig('sirena_conf', 2)">
+                    <label for="sir-2">AUTO</label>
+                </div>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <span class="telemetry-label">Modo Luz Vereda</span>
+                <div class="segmented-control">
+                    <input type="radio" id="ver-0" name="ver_mode" value="0" onchange="sendConfig('luz_vereda_conf', 0)">
+                    <label for="ver-0">OFF</label>
+                    <input type="radio" id="ver-1" name="ver_mode" value="1" onchange="sendConfig('luz_vereda_conf', 1)">
+                    <label for="ver-1">ON</label>
+                    <input type="radio" id="ver-2" name="ver_mode" value="2" onchange="sendConfig('luz_vereda_conf', 2)">
+                    <label for="ver-2">AUTO</label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Card -->
+        <div class="card">
+            <div class="card-title">
+                <span>Parámetros y Tiempos</span>
+            </div>
+            
+            <div class="input-group">
+                <label for="set-luz">Umbral Noche (LDR)</label>
+                <input type="number" id="set-luz" onblur="sendConfig('valor_noche', parseInt(this.value))">
+            </div>
+
+            <div class="input-group">
+                <label for="set-hist">Histéresis Luz</label>
+                <input type="number" id="set-hist" onblur="sendConfig('histeresis_luz', parseInt(this.value))">
+            </div>
+
+            <div class="input-group">
+                <label for="set-sertime">Tiempo Sirena (seg)</label>
+                <input type="number" id="set-sertime" onblur="sendConfig('sirena_time', parseInt(this.value))">
+            </div>
+
+            <div class="input-group">
+                <label for="set-reftime">Tiempo Reflectores (seg)</label>
+                <input type="number" id="set-reftime" onblur="sendConfig('ref_time', parseInt(this.value))">
+            </div>
+
+            <div class="input-group">
+                <label for="set-movtime">Ventana PIR (seg)</label>
+                <input type="number" id="set-movtime" onblur="sendConfig('mov_time', parseInt(this.value))">
+            </div>
+
+            <div class="input-group">
+                <label for="set-movrst">Reset Movimiento (seg)</label>
+                <input type="number" id="set-movrst" onblur="sendConfig('mov_rst', parseInt(this.value))">
+            </div>
+
+            <div class="input-group">
+                <label for="set-int">Intervalo Telemetría (seg)</label>
+                <input type="number" id="set-int" onblur="sendConfig('interval_data', parseInt(this.value))">
+            </div>
+        </div>
+    </div>
+
+    <div id="toast">Configuración Guardada ✓</div>
+
+    <footer>
+        Alarma Residencial - Los Hornos
+    </footer>
+
+    <script>
+        function showToast() {
+            const toast = document.getElementById("toast");
+            toast.className = "show";
+            setTimeout(() => { toast.className = toast.className.replace("show", ""); }, 2000);
+        }
+
+        async function pollStatus() {
+            try {
+                const response = await fetch('/api/status');
+                if (!response.ok) throw new Error();
+                const data = await response.json();
+                
+                // Actualizar badges de conexión
+                document.getElementById("conn-dot").className = "status-dot online";
+                document.getElementById("conn-text").innerText = "Conectado";
+
+                // Telemetría
+                document.getElementById("val-temp").innerText = data.temp + "°C";
+                document.getElementById("val-hum").innerText = data.hum + "%";
+                document.getElementById("val-luz").innerText = data.luz + " (" + data.luz_txt + ")";
+                document.getElementById("val-mov").innerText = data.mov_count;
+
+                // Toggles
+                document.getElementById("ctrl-pir1").checked = data.pir1_en;
+                document.getElementById("ctrl-pir2").checked = data.pir2_en;
+                document.getElementById("ctrl-camaras").checked = data.camaras_en;
+
+                // Modos (Radios)
+                document.getElementById("ref-" + data.reflectores_conf).checked = true;
+                document.getElementById("sir-" + data.sirena_conf).checked = true;
+                document.getElementById("ver-" + data.luz_vereda_conf).checked = true;
+
+                // Estados Físicos Actuadores
+                const stSirena = document.getElementById("st-sirena");
+                const txtSirena = document.getElementById("txt-sirena");
+                if (data.sirena_st) {
+                    stSirena.className = "indicator-dot active-red";
+                    txtSirena.innerText = "SONANDO";
+                    txtSirena.style.color = "var(--accent-red)";
+                } else {
+                    stSirena.className = "indicator-dot";
+                    txtSirena.innerText = "Apagada";
+                    txtSirena.style.color = "var(--text-muted)";
+                }
+
+                const stRef = document.getElementById("st-reflectores");
+                const txtRef = document.getElementById("txt-reflectores");
+                if (data.reflectores_st) {
+                    stRef.className = "indicator-dot active";
+                    txtRef.innerText = "ENCENDIDOS";
+                    txtRef.style.color = "var(--accent-cyan)";
+                } else {
+                    stRef.className = "indicator-dot";
+                    txtRef.innerText = "Apagados";
+                    txtRef.style.color = "var(--text-muted)";
+                }
+
+                const stVereda = document.getElementById("st-vereda");
+                const txtVereda = document.getElementById("txt-vereda");
+                if (data.luz_vereda_st) {
+                    stVereda.className = "indicator-dot active-orange";
+                    txtVereda.innerText = "ENCENDIDA";
+                    txtVereda.style.color = "var(--accent-orange)";
+                } else {
+                    stVereda.className = "indicator-dot";
+                    txtVereda.innerText = "Apagada";
+                    txtVereda.style.color = "var(--text-muted)";
+                }
+
+                // Inputs de Parámetros (sólo si no tienen foco activo)
+                updateInputIfNotActive("set-luz", data.valor_noche);
+                updateInputIfNotActive("set-hist", data.histeresis_luz);
+                updateInputIfNotActive("set-sertime", data.sirena_time);
+                updateInputIfNotActive("set-reftime", data.ref_time);
+                updateInputIfNotActive("set-movtime", data.mov_time);
+                updateInputIfNotActive("set-movrst", data.mov_rst);
+                updateInputIfNotActive("set-int", data.interval_data);
+
+            } catch (e) {
+                document.getElementById("conn-dot").className = "status-dot";
+                document.getElementById("conn-text").innerText = "Desconectado";
+            }
+        }
+
+        function updateInputIfNotActive(id, val) {
+            const el = document.getElementById(id);
+            if (document.activeElement !== el) {
+                el.value = val;
+            }
+        }
+
+        async function sendConfig(key, value) {
+            try {
+                const payload = {};
+                payload[key] = value;
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (response.ok) {
+                    showToast();
+                    pollStatus();
+                }
+            } catch (e) {
+                console.error("Fallo al guardar config");
+            }
+        }
+
+        // Iniciar polling
+        pollStatus();
+        setInterval(pollStatus, 3000);
+    </script>
+</body>
+</html>
+)rawliteral";
+
+// --- API WEB SERVER HANDLERS ---
+void handleRoot() {
+  server.send_P(200, "text/html", INDEX_HTML);
 }
 
-void handleNotFound()
-{
-    server.send(404, "text/plain", "404: Not Found");
+void handleNotFound() {
+  server.send(404, "text/plain", "404: Not Found");
 }
 
-void handleToggleSirena() {
-  SirenaConf = (SirenaConf == 2) ? 0 : 2;
-  saveConfig();
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "Redirigiendo...");
+void handleApiStatus() {
+  StaticJsonDocument<800> doc;
+  doc["temp"] = TEMPERATURA;
+  doc["hum"] = HUMEDAD;
+  doc["luz"] = fotoval;
+  doc["luz_txt"] = (fotoval < valNocheHist) ? "Dia" : "Noche";
+  doc["sensor_trigger"] = SensorN;
+  doc["mov_count"] = CuentaMov;
+  
+  doc["sirena_st"] = sirenaST;
+  doc["reflectores_st"] = reflectoresST;
+  doc["luz_vereda_st"] = luzVeredaST;
+  
+  doc["sirena_conf"] = SirenaConf;
+  doc["reflectores_conf"] = ReflectoresConf;
+  doc["luz_vereda_conf"] = LuzVeredaConf;
+  doc["camaras_en"] = CamarasEn;
+  doc["pir1_en"] = PIR1En;
+  doc["pir2_en"] = PIR2En;
+  
+  doc["interval_data"] = intervalData;
+  doc["mov_time"] = movTime;
+  doc["sirena_time"] = sirenaTime;
+  doc["ref_time"] = refTime;
+  doc["mov_rst"] = movRst;
+  doc["valor_noche"] = ValorNoche;
+  doc["histeresis_luz"] = histeresisLuz;
+
+  String json;
+  serializeJson(doc, json);
+  server.send(200, "application/json", json);
 }
 
-void handleToggleReflectores() {
-  ReflectoresConf = (ReflectoresConf == 2) ? 0 : 2;
-  saveConfig();
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "Redirigiendo...");
-}
-
-void handleToggleLuzVereda() {
-  LuzVeredaConf = (LuzVeredaConf == 1) ? 0 : 1;
-  saveConfig();
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "Redirigiendo...");
-}
-
-void handleTogglePIR1() {
-  PIR1En = (PIR1En == 1) ? 0 : 1;
-  saveConfig();
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "Redirigiendo...");
-}
-
-void handleTogglePIR2() {
-  PIR2En = (PIR2En == 1) ? 0 : 1;
-  saveConfig();
-  server.sendHeader("Location", "/", true);
-  server.send(302, "text/plain", "Redirigiendo...");
+void handleApiConfig() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "application/json", "{\"error\":\"Body vacio\"}");
+    return;
+  }
+  
+  String body = server.arg("plain");
+  StaticJsonDocument<500> doc;
+  DeserializationError error = deserializeJson(doc, body);
+  if (error) {
+    server.send(400, "application/json", "{\"error\":\"JSON Invalido\"}");
+    return;
+  }
+  
+  bool configChanged = false;
+  
+  if (doc.containsKey("reflectores_conf")) { ReflectoresConf = doc["reflectores_conf"]; configChanged = true; }
+  if (doc.containsKey("luz_vereda_conf"))   { LuzVeredaConf = doc["luz_vereda_conf"]; configChanged = true; }
+  if (doc.containsKey("sirena_conf"))        { SirenaConf = doc["sirena_conf"]; configChanged = true; }
+  if (doc.containsKey("camaras_en"))         { CamarasEn = doc["camaras_en"]; configChanged = true; }
+  if (doc.containsKey("interval_data"))      { intervalData = doc["interval_data"]; configChanged = true; }
+  if (doc.containsKey("mov_time"))           { movTime = doc["mov_time"]; configChanged = true; }
+  if (doc.containsKey("valor_noche"))        { ValorNoche = doc["valor_noche"]; configChanged = true; }
+  if (doc.containsKey("histeresis_luz"))     { histeresisLuz = doc["histeresis_luz"]; configChanged = true; }
+  if (doc.containsKey("sirena_time"))        { sirenaTime = doc["sirena_time"]; configChanged = true; }
+  if (doc.containsKey("ref_time"))           { refTime = doc["ref_time"]; configChanged = true; }
+  if (doc.containsKey("mov_rst"))            { movRst = doc["mov_rst"]; configChanged = true; }
+  if (doc.containsKey("pir1_en"))            { PIR1En = doc["pir1_en"]; configChanged = true; }
+  if (doc.containsKey("pir2_en"))            { PIR2En = doc["pir2_en"]; configChanged = true; }
+  
+  if (configChanged) {
+    saveConfig();
+  }
+  
+  server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 // --- SETUP ---
@@ -493,11 +1130,9 @@ void setup()
   mqttClient.setServer(mqttServer, mqttPort);
   mqttClient.setCallback(callback);
 
-  server.on("/toggleSirena", handleToggleSirena);
-  server.on("/toggleReflectores", handleToggleReflectores);
-  server.on("/toggleLuzVereda", handleToggleLuzVereda);
-  server.on("/togglePIR1", handleTogglePIR1);
-  server.on("/togglePIR2", handleTogglePIR2);
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/api/status", HTTP_GET, handleApiStatus);
+  server.on("/api/config", HTTP_POST, handleApiConfig);
 
   pinMode(MovPIR1, INPUT);
   pinMode(MovPIR2, INPUT);
@@ -515,7 +1150,6 @@ void setup()
   
   secondTicker.attach(1, onSecondTick);
 
-  server.on("/", handleRoot);
   server.onNotFound(handleNotFound);
   server.begin();
 
