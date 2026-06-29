@@ -1,0 +1,97 @@
+<resources>
+    <string name="app_name">Alarma y domótica</string>
+    
+    <!-- Pestañas de Navegación -->
+    <string name="tab_inicio">Inicio</string>
+    <string name="tab_clima">Pileta</string>
+    <string name="tab_domotica">Domótica</string>
+    <string name="tab_seguridad">Seguridad</string>
+    <string name="tab_config">Ajustes</string>
+
+    <!-- Pestaña Inicio (Dashboard) -->
+    <string name="panic_button">PÁNICO</string>
+    <string name="panic_desc">Doble toque para Sirena</string>
+    <string name="connection_status">Red: %s</string>
+    <string name="mqtt_connected">MQTT Nube</string>
+    <string name="local_connected">Red Local</string>
+    <string name="disconnected">Sin Conexión</string>
+    <string name="outside_temp">Temp. Exterior</string>
+    <string name="outside_hum">Hum. Exterior</string>
+    <string name="patio_temp">Temp. Patio</string>
+    <string name="patio_hum">Hum. Patio</string>
+    <string name="pool_temp">Temp. Pileta</string>
+    <string name="ambient_light">Nivel de Luz</string>
+
+    <!-- Climatización -->
+    <string name="temp_set">Consigna: %.1f°C</string>
+    <string name="temp_colector">Colector: %.1f°C</string>
+    <string name="temp_dif">Diferencial: %.1f°C</string>
+    <string name="pump_mode">Modo de Bomba</string>
+    <string name="intercambio_solar">Intercambio Solar</string>
+    <string name="min_on">Mín. ON: %s</string>
+    <string name="min_off">Mín. OFF: %s</string>
+    <string name="max_on">Máx. ON: %s</string>
+    <string name="solar_status">Climatizando</string>
+    <string name="solar_idle">En Espera</string>
+
+    <!-- Domótica (Luces y Agua) -->
+    <string name="lights">Luces</string>
+    <string name="light_frente_reflectores">Reflectores Frente</string>
+    <string name="light_vereda">Luz Vereda</string>
+    <string name="light_patio_reflectores">Reflectores Patio</string>
+    <string name="light_pileta">Luz Pileta</string>
+    <string name="light_galeria">Luz Galería</string>
+    <string name="light_galeria_borde">Galería Borde</string>
+    <string name="mode_off">OFF</string>
+    <string name="mode_on">ON</string>
+    <string name="mode_auto">AUTO</string>
+    
+    <string name="pumps">Bombas y Agua</string>
+    <string name="pump_cisterna">Bomba Cisterna</string>
+    <string name="pump_tanque">Bomba Tanque</string>
+    <string name="water_level">Nivel de Cisterna</string>
+    <string name="water_present">CON AGUA</string>
+    <string name="water_empty">VACÍA</string>
+    
+    <string name="auxiliary">Salidas Auxiliares</string>
+    <string name="aux_1">Auxiliar 1</string>
+    <string name="aux_2">Auxiliar 2</string>
+
+    <!-- Seguridad (Alarma) -->
+    <string name="alarm_status">Alarma: %s</string>
+    <string name="alarm_armed">ARMADA</string>
+    <string name="alarm_disarmed">DESARMADA</string>
+    <string name="cameras">Cámaras de Seguridad</string>
+    <string name="cameras_on">ENCENDIDAS</string>
+    <string name="cameras_off">APAGADAS</string>
+    <string name="siren_conf">Control de Sirena</string>
+    <string name="sensors">Sensores de Movimiento</string>
+    <string name="sensor_pir1">Sensor Frente (PIR 1)</string>
+    <string name="sensor_pir2">Sensor Lateral (PIR 2)</string>
+    <string name="enabled">HABILITADO</string>
+    <string name="disabled">ANULADO</string>
+    <string name="movement_detected">MOVIMIENTO DETECTADO</string>
+    <string name="movement_ok">Normal</string>
+    <string name="event_log">Log de Movimientos</string>
+    <string name="clear_logs">Limpiar Registro</string>
+
+    <!-- Ajustes -->
+    <string name="network_settings">Ajustes de Conexión</string>
+    <string name="mqtt_settings">Broker MQTT Remoto</string>
+    <string name="local_settings">Servidores Locales (.local)</string>
+    <string name="sensor_settings">Calibración y Límites</string>
+    <string name="temp_deltas">Deltas de Climatizador</string>
+    <string name="temp_dif_on">Delta Encendido (°C)</string>
+    <string name="temp_dif_off">Delta Apagado (°C)</string>
+    <string name="ldr_settings">Umbrales Sensor de Luz</string>
+    <string name="ldr_night_val">Umbral de Noche</string>
+    <string name="ldr_night_hist">Histéresis LDR</string>
+    <string name="telemetry_interval">Frecuencia Telemetría (seg)</string>
+    <string name="device_diagnostics">Estado de Nodos</string>
+    <string name="node_frente">Frente (ESP8266)</string>
+    <string name="node_patio">Patio (ESP32)</string>
+    <string name="signal_strength">Señal WiFi: %d dBm</string>
+    <string name="uptime">Uptime: %s</string>
+    <string name="firmware_version">Firmware: %s</string>
+    <string name="ota_update">Iniciar Actualización OTA</string>
+</resources>
