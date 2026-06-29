@@ -488,6 +488,8 @@ void setup()
 
   ArduinoOTA.begin();
 
+  esp8266Client.setTimeout(1500); // 1.5 segundos de timeout para evitar congelamiento de WDT
+
   mqttClient.setServer(mqttServer, mqttPort);
   mqttClient.setCallback(callback);
 
