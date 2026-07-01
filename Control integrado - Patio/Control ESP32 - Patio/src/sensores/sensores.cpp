@@ -4,6 +4,12 @@
 #include <DallasTemperature.h>
 #include <Preferences.h>
 
+// Timers para lecturas no bloqueantes
+unsigned long ultimoDHT = 0;
+unsigned long ultimoDS18_Req = 0;
+bool ds18_conversionEnProgreso = false;
+unsigned long ultimoLuzNivel = 0;
+
 // =====================================================
 // OBJETOS DE SENSORES
 // =====================================================
@@ -149,6 +155,7 @@ void sensoresInit()
 
     dht.begin();
     ds18.begin();
+    ds18.setWaitForConversion(false); // No bloqueante
 
     if (!cargarROMs()) {
         Serial.println("No hay ROM guardada. Registrando...");
@@ -176,8 +183,6 @@ void leerDS18()
 {
     if (!romsCargadas) return;
 
-    ds18.requestTemperatures();
-
     DeviceAddress *romPile;
     DeviceAddress *romCol;
 
@@ -191,6 +196,9 @@ void leerDS18()
 
     float tPile = ds18.getTempC(*romPile);
     float tCol  = ds18.getTempC(*romCol);
+
+    piletaRaw = ds18.getTempC(romPileta);
+    colectorRaw = ds18.getTempC(romColector);
 
     // === PILETA ===
     if (tPile == DEVICE_DISCONNECTED_C || tPile < -20 || tPile > 80) {
@@ -294,17 +302,35 @@ void leerLuz()
 // =====================================================
 void leerSensores()
 {
-    leerDHT();
-    leerDS18();
-    leerNivel();
-    leerLuz();
-}
-
-void leerDS18_crudo()
-{
-    ds18.requestTemperatures();
-    piletaRaw = ds18.getTempCByIndex(0);
-    delay(250);
-    colectorRaw = ds18.getTempCByIndex(1);
+    unsigned long ahora = millis();
+    
+    // Nivel y luz cada 500ms
+    if (ahora - ultimoLuzNivel >= 500) {
+        ultimoLuzNivel = ahora;
+        leerNivel();
+        leerLuz();
+    }
+    
+    // DHT cada 5000ms
+    if (ahora - ultimoDHT >= 5000) {
+        ultimoDHT = ahora;
+        leerDHT();
+    }
+    
+    // DS18B20 asíncrono
+    // Iniciar conversión cada 5000ms
+    if (!ds18_conversionEnProgreso && (ahora - ultimoDS18_Req >= 5000)) {
+        ultimoDS18_Req = ahora;
+        if (romsCargadas) {
+            ds18.requestTemperatures();
+            ds18_conversionEnProgreso = true;
+        }
+    }
+    
+    // Leer valores 750ms después de iniciar la conversión
+    if (ds18_conversionEnProgreso && (ahora - ultimoDS18_Req >= 750)) {
+        ds18_conversionEnProgreso = false;
+        leerDS18();
+    }
 }
 

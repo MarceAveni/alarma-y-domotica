@@ -43,29 +43,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   StaticJsonDocument<500> doc;
   if (deserializeJson(doc, msg)) return;
 
-  if (doc.containsKey("intervalData")) intervalData = doc["intervalData"];
-  if (doc.containsKey("tempDif_on")) tempDif_on = doc["tempDif_on"];
-  if (doc.containsKey("tempDif_off")) tempDif_off = doc["tempDif_off"];
-  if (doc.containsKey("tempSet")) tempSet = doc["tempSet"];
-  if (doc.containsKey("minOnTime")) minOnTime = doc["minOnTime"];
-  if (doc.containsKey("minOffTime")) minOffTime = doc["minOffTime"];
-  if (doc.containsKey("maxOnTime")) maxOnTime = doc["maxOnTime"];
-  if (doc.containsKey("bombaPiletaConf")) bombaPiletaConf = doc["bombaPiletaConf"];
-  if (doc.containsKey("bombaCisternaConf")) bombaCisternaConf = doc["bombaCisternaConf"];
-  if (doc.containsKey("bombaTanqueConf")) bombaTanqueConf = doc["bombaTanqueConf"];
-  if (doc.containsKey("reflectoresConf")) reflectoresConf = doc["reflectoresConf"];
-  if (doc.containsKey("luzPiletaConf")) luzPiletaConf = doc["luzPiletaConf"];
-  if (doc.containsKey("luzGaleriaConf")) luzGaleriaConf = doc["luzGaleriaConf"];
-  if (doc.containsKey("luzGaleriaBordeConf")) luzGaleriaBordeConf = doc["luzGaleriaBordeConf"];
-  if (doc.containsKey("IntercambioST")) {
-    bool nuevo = doc["IntercambioST"];
-    if (nuevo != IntercambioST)
-    {
-        IntercambioST = nuevo;
-        guardarIntercambioST();
-    }
-  }
-  if (doc.containsKey("Telemetria")) Telemetria = doc["Telemetria"];
+  procesarComandosJson(doc);
 
   bool buzzerState = false;
   for(int i = 0; i < 1000; i++){ // hace un poco de ruido
@@ -86,34 +64,40 @@ void mqttConfig()
     mqttClient.setCallback(callback);
 }
 
-void reconnect()
+unsigned long ultimoIntentoMQTT = 0;
+const unsigned long INTERVALO_INTENTO_MQTT = 10000; // 10 segundos
+
+void handleMqtt()
 {
-  ArduinoOTA.handle();
-  Serial.println("Intentando conectarse MQTT...");
-  if (mqttClient.connect("esp32Client", mqttUser, mqttPassword))
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  if (!mqttClient.connected())
   {
-      Serial.println("Conectado");
-      mqttClient.subscribe("BALH142N1788/Aveni793");
-      bool buzzerState = false;
-      for(int i = 0; i < 1000; i++){ // hace un poco de ruido
-        buzzerState = !buzzerState;
-        digitalWrite(SalidaBz, !buzzerState);
-        delayMicroseconds(200);
+    unsigned long ahora = millis();
+    if (ahora - ultimoIntentoMQTT >= INTERVALO_INTENTO_MQTT)
+    {
+      ultimoIntentoMQTT = ahora;
+      Serial.println("Intentando conectar a MQTT...");
+      String clientId = "esp32Client_Patio_" + String((uint32_t)ESP.getEfuseMac(), HEX);
+      if (mqttClient.connect(clientId.c_str(), mqttUser, mqttPassword))
+      {
+        Serial.println("MQTT Conectado");
+        mqttClient.subscribe("BALH142N1788/Aveni793");
+        
+        digitalWrite(SalidaBz, HIGH);
+        delay(100);
+        digitalWrite(SalidaBz, LOW);
       }
-      delay(150);
-      for(int i = 0; i < 1000; i++){ // hace un poco de ruido
-        buzzerState = !buzzerState;
-        digitalWrite(SalidaBz, !buzzerState);
-        delayMicroseconds(100);
+      else
+      {
+        Serial.print("Fallo conexion MQTT, rc=");
+        Serial.println(mqttClient.state());
       }
-      digitalWrite(SalidaBz, LOW);
+    }
   }
   else
   {
-    Serial.print("Fallo, rc=");
-    Serial.print(mqttClient.state());
-    Serial.println(" intentar de nuevo en 2 segundos");
-    delay(2000);
+    mqttClient.loop();
   }
 }
 
@@ -275,4 +259,50 @@ void otaConfig()
     });
 
     ArduinoOTA.begin();
+}
+
+void handleStatus()
+{
+  StaticJsonDocument<1000> doc;
+  crearEstadoJson(doc);
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+}
+
+void handleControl()
+{
+  if (!server.hasArg("plain"))
+  {
+    server.send(400, "application/json", "{\"error\":\"Body vacio\"}");
+    return;
+  }
+
+  String body = server.arg("plain");
+  StaticJsonDocument<1000> doc;
+  DeserializationError error = deserializeJson(doc, body);
+  if (error)
+  {
+    server.send(400, "application/json", "{\"error\":\"JSON Invalido\"}");
+    return;
+  }
+
+  procesarComandosJson(doc);
+
+  StaticJsonDocument<1000> responseDoc;
+  crearEstadoJson(responseDoc);
+  String response;
+  serializeJson(responseDoc, response);
+  server.send(200, "application/json", response);
+}
+
+void serverConfig()
+{
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/control", HTTP_POST, handleControl);
+  server.onNotFound([]() {
+    server.send(404, "text/plain", "404: Not Found");
+  });
+  server.begin();
+  Serial.println("Servidor HTTP local iniciado en puerto 80");
 }

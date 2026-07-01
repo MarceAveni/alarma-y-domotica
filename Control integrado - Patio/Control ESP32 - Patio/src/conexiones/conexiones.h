@@ -34,4 +34,5 @@ void wifiConect();
 void wifiLoop();
 void otaConfig();
 void mqttConfig();
-void reconnect();
+void handleMqtt();
+void serverConfig();

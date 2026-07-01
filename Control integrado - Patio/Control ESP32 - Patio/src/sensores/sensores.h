@@ -8,8 +8,6 @@ void sensoresInit();
 // Lecturas generales
 void leerSensores();
 
-void leerDS18_crudo();
-
 void guardarIntercambioST();
 
 // Flags de estado

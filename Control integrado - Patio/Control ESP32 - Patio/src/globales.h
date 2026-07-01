@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <ArduinoJson.h>
 
 // === MAPEO DE PINES ESP32 ===
 // Notas: elegir pines seguros para ESP32 (evitar GPIO1/GPIO3, y pines que comprometan el boot)
@@ -78,3 +79,6 @@ extern unsigned long minOffTime;   // X min apagada mínimo
 extern unsigned long maxOnTime;   // X min máximo encendida
 
 #define MQTT_MAX_PACKET_SIZE 1024
+
+void crearEstadoJson(JsonDocument& doc);
+void procesarComandosJson(JsonDocument& doc);

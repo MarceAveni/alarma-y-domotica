@@ -85,13 +85,8 @@ unsigned long maxOnTime  = 900000;   // 15 min máximo encendida
 // =======================
 Ticker secondTicker;
 
-// =======================
-// PUBLI TELEMETRÍA – RECICLADO
-// =======================
-void enviarDatos()
+void crearEstadoJson(JsonDocument& doc)
 {
-  StaticJsonDocument<1000> doc;
-
   doc["tempPileta"] = tempPileta;
   doc["tempColector"] = tempColector;
   doc["bombaPiletaST"] = bombaPiletaST;
@@ -121,6 +116,43 @@ void enviarDatos()
   doc["IntercambioST"] = IntercambioST;
   doc["tempPiletaCrudo"] = piletaRaw;
   doc["tempColectorCrudo"] = colectorRaw;
+  doc["aux1En"] = aux1En;
+  doc["aux2En"] = aux2En;
+}
+
+void procesarComandosJson(JsonDocument& doc)
+{
+  if (doc.containsKey("intervalData")) intervalData = doc["intervalData"];
+  if (doc.containsKey("tempDif_on")) tempDif_on = doc["tempDif_on"];
+  if (doc.containsKey("tempDif_off")) tempDif_off = doc["tempDif_off"];
+  if (doc.containsKey("tempSet")) tempSet = doc["tempSet"];
+  if (doc.containsKey("minOnTime")) minOnTime = doc["minOnTime"];
+  if (doc.containsKey("minOffTime")) minOffTime = doc["minOffTime"];
+  if (doc.containsKey("maxOnTime")) maxOnTime = doc["maxOnTime"];
+  if (doc.containsKey("bombaPiletaConf")) bombaPiletaConf = doc["bombaPiletaConf"];
+  if (doc.containsKey("bombaCisternaConf")) bombaCisternaConf = doc["bombaCisternaConf"];
+  if (doc.containsKey("bombaTanqueConf")) bombaTanqueConf = doc["bombaTanqueConf"];
+  if (doc.containsKey("reflectoresConf")) reflectoresConf = doc["reflectoresConf"];
+  if (doc.containsKey("luzPiletaConf")) luzPiletaConf = doc["luzPiletaConf"];
+  if (doc.containsKey("luzGaleriaConf")) luzGaleriaConf = doc["luzGaleriaConf"];
+  if (doc.containsKey("luzGaleriaBordeConf")) luzGaleriaBordeConf = doc["luzGaleriaBordeConf"];
+  if (doc.containsKey("aux1En")) aux1En = doc["aux1En"];
+  if (doc.containsKey("aux2En")) aux2En = doc["aux2En"];
+  if (doc.containsKey("IntercambioST")) {
+    bool nuevo = doc["IntercambioST"];
+    if (nuevo != IntercambioST)
+    {
+        IntercambioST = nuevo;
+        guardarIntercambioST();
+    }
+  }
+  if (doc.containsKey("Telemetria")) Telemetria = doc["Telemetria"];
+}
+
+void enviarDatos()
+{
+  StaticJsonDocument<1000> doc;
+  crearEstadoJson(doc);
 
   char buffer[1024];
   size_t n = serializeJson(doc, buffer);
@@ -336,6 +368,7 @@ void setup()
   wifiConect();
   otaConfig();
   mqttConfig();
+  serverConfig();
 
   pinMode(SalidaBz, OUTPUT);
   digitalWrite(SalidaBz, LOW);
@@ -378,13 +411,8 @@ void loop()
 {
   wifiLoop();
   ArduinoOTA.handle();
-
-  mqttClient.loop();
-  delay(250);
-  if (!mqttClient.connected())
-  {
-    reconnect();
-  }
+  handleMqtt();
+  server.handleClient();
   
   leerSensores();
   controlBombaPileta();
@@ -395,8 +423,5 @@ void loop()
     enviarDatos();
     Telemetria = false;
   }
-
-  leerDS18_crudo();
-
 }
 
