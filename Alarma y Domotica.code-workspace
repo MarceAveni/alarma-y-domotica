@@ -7,6 +7,10 @@
 		{
 			"name": "Control Wifi - Frente",
 			"path": "Control integrado - Frente/Control Wifi - Frente"
+		},
+		{
+			"name": "Control simple - ESP01",
+			"path": "Control simple - ESP01"
 		}
 	]
 }
