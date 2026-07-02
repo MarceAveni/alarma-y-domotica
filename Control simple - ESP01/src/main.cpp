@@ -14,6 +14,10 @@
 // Definición de pines para ESP-01
 #define CANAL1_PIN 0 // GPIO0 - Accionamiento de Reflector de Patio
 #define CANAL2_PIN 2 // GPIO2 - Accionamiento de Luces Borde de Galería
+#define BOTON1_PIN 3 // GPIO3 (RX) - Botón Canal 1 (Reflector Patio)
+#define BOTON2_PIN 1 // GPIO1 (TX) - Botón Canal 2 (Borde Galería)
+
+#define TOUCH_ACTIVE_STATE HIGH // HIGH para sensores capacitivos activos en alto (TTP223 por defecto)
 
 // Definición de variables y constantes
 int intervalData = 60;                // Intervalo de tiempo [seg] en el que se envían datos
@@ -710,8 +714,114 @@ void handleApiConfig() {
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
+// --- CONTROL DE BOTONES TOUCH MANUALES ---
+void readButtons() {
+  unsigned long now = millis();
+
+  // --- BOTON 1 (Reflector Patio - Pin RX / GPIO3) ---
+  bool b1Reading = (digitalRead(BOTON1_PIN) == TOUCH_ACTIVE_STATE);
+  static bool b1LastState = false;
+  static bool b1State = false;
+  static unsigned long b1LastDebounceTime = 0;
+  static unsigned long b1PressStartTime = 0;
+  static bool b1LongPressHandled = false;
+
+  if (b1Reading != b1LastState) {
+    b1LastDebounceTime = now;
+    b1LastState = b1Reading;
+  }
+
+  if ((now - b1LastDebounceTime) > 50) {
+    if (b1Reading != b1State) {
+      b1State = b1Reading;
+      if (b1State) {
+        // Recién presionado
+        b1PressStartTime = now;
+        b1LongPressHandled = false;
+      } else {
+        // Recién soltado
+        if (!b1LongPressHandled && b1PressStartTime > 0 && (now - b1PressStartTime < 3000)) {
+          // Toque corto: Conmutar encendido/apagado manual
+          if (canal1ST) {
+            canal1Conf = 0; // Apagar
+          } else {
+            canal1Conf = 1; // Encender
+          }
+          saveConfig();
+          actuadores();
+          enviarDatos();
+        }
+        b1PressStartTime = 0;
+      }
+    }
+  }
+
+  // Si está presionado, evaluar pulsación larga de 3 segundos
+  if (b1State && !b1LongPressHandled) {
+    if (now - b1PressStartTime >= 3000) {
+      b1LongPressHandled = true;
+      canal1Conf = 2; // Pasar a AUTOMÁTICO
+      saveConfig();
+      actuadores();
+      enviarDatos();
+    }
+  }
+
+  // --- BOTON 2 (Borde Galería - Pin TX / GPIO1) ---
+  bool b2Reading = (digitalRead(BOTON2_PIN) == TOUCH_ACTIVE_STATE);
+  static bool b2LastState = false;
+  static bool b2State = false;
+  static unsigned long b2LastDebounceTime = 0;
+  static unsigned long b2PressStartTime = 0;
+  static bool b2LongPressHandled = false;
+
+  if (b2Reading != b2LastState) {
+    b2LastDebounceTime = now;
+    b2LastState = b2Reading;
+  }
+
+  if ((now - b2LastDebounceTime) > 50) {
+    if (b2Reading != b2State) {
+      b2State = b2Reading;
+      if (b2State) {
+        // Recién presionado
+        b2PressStartTime = now;
+        b2LongPressHandled = false;
+      } else {
+        // Recién soltado
+        if (!b2LongPressHandled && b2PressStartTime > 0 && (now - b2PressStartTime < 3000)) {
+          // Toque corto: Conmutar encendido/apagado manual
+          if (canal2ST) {
+            canal2Conf = 0; // Apagar
+          } else {
+            canal2Conf = 1; // Encender
+          }
+          saveConfig();
+          actuadores();
+          enviarDatos();
+        }
+        b2PressStartTime = 0;
+      }
+    }
+  }
+
+  // Si está presionado, evaluar pulsación larga de 3 segundos
+  if (b2State && !b2LongPressHandled) {
+    if (now - b2PressStartTime >= 3000) {
+      b2LongPressHandled = true;
+      canal2Conf = 2; // Pasar a AUTOMÁTICO
+      saveConfig();
+      actuadores();
+      enviarDatos();
+    }
+  }
+}
+
 // --- SETUP ---
 void setup() {
+  // Asegurar que el puerto Serie esté apagado para liberar pines RX (GPIO3) y TX (GPIO1) como GPIO
+  Serial.end();
+
   // Cargar configuración persistida
   loadConfig();
 
@@ -720,6 +830,10 @@ void setup() {
   digitalWrite(CANAL2_PIN, HIGH);
   pinMode(CANAL1_PIN, OUTPUT);
   pinMode(CANAL2_PIN, OUTPUT);
+
+  // Configurar pines de botones touch como entrada
+  pinMode(BOTON1_PIN, INPUT);
+  pinMode(BOTON2_PIN, INPUT);
 
   // Inicializar estado físico según configuración cargada
   actuadores();
@@ -772,6 +886,9 @@ void loop() {
   handleMqtt();
 
   server.handleClient();
+
+  // Leer estado de botones touch capacitivos
+  readButtons();
 
   // Envío periódico de datos
   if ((enviaDataCounter >= intervalData) || Telemetria) {
