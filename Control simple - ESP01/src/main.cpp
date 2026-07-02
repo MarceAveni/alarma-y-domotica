@@ -1,3 +1,5 @@
+#define MQTT_MAX_PACKET_SIZE 1024
+
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
@@ -8,8 +10,6 @@
 #include <Ticker.h>
 #include <ESP8266WebServer.h>
 #include <EEPROM.h>
-
-#define MQTT_MAX_PACKET_SIZE 1024
 
 // Definición de pines para ESP-01
 #define CANAL1_PIN 0 // GPIO0 - Accionamiento de Reflector de Patio
@@ -114,7 +114,7 @@ void callback(char *topic, byte *payload, unsigned int length) {
           luzVal.toLowerCase();
           if (luzVal.indexOf("noche") >= 0) {
             esDeNoche = true;
-          } else if (luzVal.indexOf("dia") >= 0 || luzVal.indexOf("d\u00eda") >= 0) {
+          } else {
             esDeNoche = false;
           }
           // Forzar actualización inmediata tras recibir cambio de luz ambiente
