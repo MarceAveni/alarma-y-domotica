@@ -12,12 +12,14 @@
 #include <EEPROM.h>
 
 // Definición de pines para ESP-01
-#define CANAL1_PIN 0 // GPIO0 - Accionamiento de Reflector de Patio
-#define CANAL2_PIN 2 // GPIO2 - Accionamiento de Luces Borde de Galería
+#define CANAL1_PIN 2 // GPIO2 - Accionamiento de Reflector de Patio
+#define CANAL2_PIN 0 // GPIO0 - Accionamiento de Luces Borde de Galería
+
 #define BOTON1_PIN 3 // GPIO3 (RX) - Botón Canal 1 (Reflector Patio)
 #define BOTON2_PIN 1 // GPIO1 (TX) - Botón Canal 2 (Borde Galería)
 
-#define TOUCH_ACTIVE_STATE HIGH // HIGH para sensores capacitivos activos en alto (TTP223 por defecto)
+#define TOUCH_ACTIVE_STATE LOW // LOW para sensores capacitivos activos en bajo (TTP223 con puente A cerrado)
+
 
 // Definición de variables y constantes
 int intervalData = 60;                // Intervalo de tiempo [seg] en el que se envían datos
