@@ -33,6 +33,7 @@ fun DomoticaScreen(
 ) {
     val frenteState by repository.frenteState.collectAsState()
     val patioState by repository.patioState.collectAsState()
+    val esp01State by repository.esp01State.collectAsState()
 
     Column(
         modifier = modifier
@@ -73,9 +74,9 @@ fun DomoticaScreen(
         ) {
             LightControlCard(
                 name = stringResource(R.string.light_patio_reflectores),
-                currentConf = patioState.reflectoresConf,
-                realState = patioState.reflectoresST,
-                onConfChanged = { repository.sendPatioCommand("reflectoresConf", it) },
+                currentConf = esp01State.canal1Conf,
+                realState = esp01State.canal1ST,
+                onConfChanged = { repository.sendESP01Command("canal1Conf", it) },
                 modifier = Modifier.weight(1f)
             )
             LightControlCard(
@@ -101,12 +102,13 @@ fun DomoticaScreen(
             )
             LightControlCard(
                 name = stringResource(R.string.light_galeria_borde),
-                currentConf = patioState.luzGaleriaBordeConf,
-                realState = patioState.luzGaleriaBordeST,
-                onConfChanged = { repository.sendPatioCommand("luzGaleriaBordeConf", it) },
+                currentConf = esp01State.canal2Conf,
+                realState = esp01State.canal2ST,
+                onConfChanged = { repository.sendESP01Command("canal2Conf", it) },
                 modifier = Modifier.weight(1f)
             )
         }
+
 
         Spacer(modifier = Modifier.height(8.dp))
 

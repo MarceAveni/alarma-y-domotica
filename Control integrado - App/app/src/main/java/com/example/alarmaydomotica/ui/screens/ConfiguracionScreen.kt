@@ -46,6 +46,8 @@ fun ConfiguracionScreen(
 
     var localIpFrente by remember { mutableStateOf("control_frente.local") }
     var localIpPatio by remember { mutableStateOf("control_patio.local") }
+    var localIpESP01 by remember { mutableStateOf("control_esp01.local") }
+
 
     // Parámetros del Climatizador
     var diffOn by remember { mutableStateOf(patioState.tempDif_on.toString()) }
@@ -196,9 +198,16 @@ fun ConfiguracionScreen(
                     modifier = Modifier.fillMaxWidth(),
                     colors = textFieldColors()
                 )
+                OutlinedTextField(
+                    value = localIpESP01,
+                    onValueChange = { localIpESP01 = it },
+                    label = { Text("ESP01 Host/IP") },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = textFieldColors()
+                )
                 Button(
                     onClick = {
-                        repository.setLocalIps(localIpFrente, localIpPatio)
+                        repository.setLocalIps(localIpFrente, localIpPatio, localIpESP01)
                         Toast.makeText(context, "Servidores Locales Guardados", Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BlueNeon, contentColor = Color.Black),
@@ -209,6 +218,7 @@ fun ConfiguracionScreen(
                 }
             }
         }
+
 
         // --- SECCIÓN CALIBRACIÓN ---
         SectionHeader(title = stringResource(R.string.sensor_settings), icon = Icons.Default.Tune, tint = OrangeAlert)

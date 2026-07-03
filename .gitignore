@@ -15,4 +15,6 @@ desktop.ini
 **/desktop.ini
 Thumbs.db
 **/*.bak
+**/*.dwl
 **/*.dwl2
+

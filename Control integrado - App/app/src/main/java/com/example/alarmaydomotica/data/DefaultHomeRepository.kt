@@ -3,6 +3,7 @@ package com.example.alarmaydomotica.data
 import android.util.Log
 import com.example.alarmaydomotica.data.model.FrenteState
 import com.example.alarmaydomotica.data.model.PatioState
+import com.example.alarmaydomotica.data.model.ESP01State
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +31,9 @@ class DefaultHomeRepository(
     private val _frenteState = MutableStateFlow(FrenteState())
     override val frenteState: StateFlow<FrenteState> = _frenteState.asStateFlow()
 
+    private val _esp01State = MutableStateFlow(ESP01State())
+    override val esp01State: StateFlow<ESP01State> = _esp01State.asStateFlow()
+
     private val _isMqttConnected = MutableStateFlow(false)
     override val isMqttConnected: StateFlow<Boolean> = _isMqttConnected.asStateFlow()
 
@@ -47,6 +51,7 @@ class DefaultHomeRepository(
 
     private var frenteIp = "control_frente.local"
     private var patioIp = "control_patio.local"
+    private var esp01Ip = "control_esp01.local"
 
     private var mqttClient: MqttClient? = null
     private val okHttpClient = OkHttpClient.Builder()
@@ -85,9 +90,10 @@ class DefaultHomeRepository(
         }
     }
 
-    override fun setLocalIps(frenteIp: String, patioIp: String) {
+    override fun setLocalIps(frenteIp: String, patioIp: String, esp01Ip: String) {
         this.frenteIp = frenteIp
         this.patioIp = patioIp
+        this.esp01Ip = esp01Ip
     }
 
     private fun startMqttConnection() {
@@ -158,10 +164,11 @@ class DefaultHomeRepository(
 
     private fun subscribeToTopics(client: MqttClient) {
         try {
-            // Suscribirse a telemetría de Patio y Frente
+            // Suscribirse a telemetría de Patio, Frente y ESP01
             client.subscribe("BALH142N1788/Patio", 1)
             client.subscribe("BALH142N1788/Frente", 1)
-            Log.d(TAG, "Suscrito a los temas MQTT del Frente y Patio.")
+            client.subscribe("BALH142N1788/ESP01", 1)
+            Log.d(TAG, "Suscrito a los temas MQTT del Frente, Patio y ESP01.")
         } catch (e: Exception) {
             Log.e(TAG, "Error al suscribirse", e)
         }
@@ -177,13 +184,115 @@ class DefaultHomeRepository(
                 "BALH142N1788/Frente" -> {
                     parseFrenteMqttJson(payload)
                 }
+                "BALH142N1788/ESP01" -> {
+                    parseESP01MqttJson(payload)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error parseando mensaje MQTT: Topic=$topic, Payload=$payload", e)
         }
     }
 
+    private fun parseESP01MqttJson(payload: String) {
+        try {
+            val jsonDoc = json.parseToJsonElement(payload).jsonObject
+            val c1ST = jsonDoc["canal1ST"]?.jsonPrimitive?.booleanOrNull ?: false
+            val c1Conf = jsonDoc["canal1Conf"]?.jsonPrimitive?.intOrNull ?: 0
+            val c2ST = jsonDoc["canal2ST"]?.jsonPrimitive?.booleanOrNull ?: false
+            val c2Conf = jsonDoc["canal2Conf"]?.jsonPrimitive?.intOrNull ?: 0
+            val luz = jsonDoc["luzAmbiente"]?.jsonPrimitive?.content ?: "dia"
+            val interval = jsonDoc["intervalData"]?.jsonPrimitive?.intOrNull ?: 60
+
+            _esp01State.value = ESP01State(
+                canal1ST = c1ST,
+                canal1Conf = c1Conf,
+                canal2ST = c2ST,
+                canal2Conf = c2Conf,
+                luzAmbiente = luz,
+                intervalData = interval
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parseando MQTT ESP01: $payload", e)
+        }
+    }
+
+    private fun parseESP01HttpJson(payload: String) {
+        try {
+            val jsonDoc = json.parseToJsonElement(payload).jsonObject
+            val c1ST = jsonDoc["canal1_st"]?.jsonPrimitive?.booleanOrNull ?: false
+            val c1Conf = jsonDoc["canal1_conf"]?.jsonPrimitive?.intOrNull ?: 0
+            val c2ST = jsonDoc["canal2_st"]?.jsonPrimitive?.booleanOrNull ?: false
+            val c2Conf = jsonDoc["canal2_conf"]?.jsonPrimitive?.intOrNull ?: 0
+            val luz = jsonDoc["luz_ambiente"]?.jsonPrimitive?.content ?: "dia"
+            val interval = jsonDoc["interval_data"]?.jsonPrimitive?.intOrNull ?: 60
+
+            _esp01State.value = ESP01State(
+                canal1ST = c1ST,
+                canal1Conf = c1Conf,
+                canal2ST = c2ST,
+                canal2Conf = c2Conf,
+                luzAmbiente = luz,
+                intervalData = interval
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parseando HTTP ESP01: $payload", e)
+        }
+    }
+
+    override fun sendESP01Command(key: String, value: Any) {
+        val isMqttMode = _isMqttConnected.value && !_isLocalMode.value
+        externalScope.launch(Dispatchers.IO) {
+            try {
+                if (isMqttMode) {
+                    val mqttKey = when (key) {
+                        "canal1_conf", "canal1Conf" -> "canal1Conf"
+                        "canal2_conf", "canal2Conf" -> "canal2Conf"
+                        "interval_data", "intervalData" -> "intervalData"
+                        else -> key
+                    }
+                    val jsonPayload = Json.encodeToString(JsonObject.serializer(), buildJsonObject(mapOf(mqttKey to value)))
+                    val message = MqttMessage(jsonPayload.toByteArray()).apply { qos = 1 }
+                    mqttClient?.publish("BALH142N1788/Aveni793", message)
+                    Log.d(TAG, "Comando ESP01 MQTT exitoso: $jsonPayload")
+                } else {
+                    val httpKey = when (key) {
+                        "canal1Conf", "canal1_conf" -> "canal1_conf"
+                        "canal2Conf", "canal2_conf" -> "canal2_conf"
+                        "intervalData", "interval_data" -> "interval_data"
+                        else -> key
+                    }
+                    val jsonPayload = Json.encodeToString(JsonObject.serializer(), buildJsonObject(mapOf(httpKey to value)))
+                    val body = jsonPayload.toRequestBody(jsonMediaType)
+                    val request = Request.Builder()
+                        .url("http://$esp01Ip/api/config")
+                        .post(body)
+                        .build()
+                    okHttpClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            Log.d(TAG, "Comando ESP01 HTTP local exitoso: $jsonPayload")
+                            updateESP01LocalState(httpKey, value)
+                        } else {
+                            Log.e(TAG, "Error HTTP ESP01 local: ${response.code}")
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Fallo al enviar comando ESP01: key=$key, val=$value", e)
+            }
+        }
+    }
+
+    private fun updateESP01LocalState(key: String, value: Any) {
+        val intVal = (value as? Number)?.toInt() ?: 0
+        when (key) {
+            "canal1_conf", "canal1Conf" -> _esp01State.value = _esp01State.value.copy(canal1Conf = intVal)
+            "canal2_conf", "canal2Conf" -> _esp01State.value = _esp01State.value.copy(canal2Conf = intVal)
+            "interval_data", "intervalData" -> _esp01State.value = _esp01State.value.copy(intervalData = intVal)
+        }
+    }
+
     private fun parseFrenteMqttJson(payload: String) {
+
         try {
             val jsonDoc = json.parseToJsonElement(payload).jsonObject
             val temp = jsonDoc["Temperatura"]?.jsonPrimitive?.intOrNull ?: 0
@@ -482,9 +591,28 @@ class DefaultHomeRepository(
                 if (!_isMqttConnected.value || _isLocalMode.value) {
                     pollPatioStatus()
                     pollFrenteStatus()
+                    pollESP01Status()
                 }
                 delay(5000) // Poll cada 5 segundos
             }
+        }
+    }
+
+    private fun pollESP01Status() {
+        try {
+            val request = Request.Builder()
+                .url("http://$esp01Ip/api/status")
+                .build()
+            okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val bodyStr = response.body?.string() ?: ""
+                    if (bodyStr.isNotEmpty() && bodyStr.startsWith("{")) {
+                        parseESP01HttpJson(bodyStr)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.v(TAG, "Polling ESP01 local falló: ${e.message}")
         }
     }
 
