@@ -9,5 +9,6 @@ data class ESP01State(
     val canal2ST: Boolean = false,
     val canal2Conf: Int = 0,
     val luzAmbiente: String = "dia",
-    val intervalData: Int = 60
+    val intervalData: Int = 60,
+    val schedules: List<ScheduleEvent> = emptyList()
 )

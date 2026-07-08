@@ -15,5 +15,6 @@ data class FrenteState(
     val sirenaConf: Int = 0, // 0=Off, 1=On
     val camarasEn: Boolean = true,
     val pir1En: Boolean = true,
-    val pir2En: Boolean = true
+    val pir2En: Boolean = true,
+    val schedules: List<ScheduleEvent> = emptyList()
 )

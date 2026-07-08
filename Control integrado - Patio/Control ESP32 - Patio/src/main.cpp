@@ -81,8 +81,86 @@ unsigned long minOffTime =  300000;   // 5 min apagada mínimo
 unsigned long maxOnTime  = 900000;   // 15 min máximo encendida
 
 // =======================
-// OBJETOS
+// OBJETOS Y HORARIOS
 // =======================
+#include <Preferences.h>
+
+ScheduleRule schedules[8];
+int ultimoMinutoEvaluado = -1;
+
+bool obtenerHoraLocal(struct tm &infoTiempo) {
+  time_t ahora = time(nullptr);
+  if (ahora < 1600000000) {
+    return false;
+  }
+  localtime_r(&ahora, &infoTiempo);
+  return true;
+}
+
+void guardarSchedules() {
+  Preferences prefs;
+  prefs.begin("horarios", false);
+  
+  DynamicJsonDocument doc(1500);
+  JsonArray arr = doc.to<JsonArray>();
+  for (int i = 0; i < 8; i++) {
+    JsonObject obj = arr.createNestedObject();
+    obj["active"] = schedules[i].active;
+    obj["hour"] = schedules[i].hour;
+    obj["minute"] = schedules[i].minute;
+    obj["weekdays"] = schedules[i].weekdays;
+    obj["target"] = schedules[i].target;
+    obj["action"] = schedules[i].action;
+  }
+  
+  String jsonStr;
+  serializeJson(doc, jsonStr);
+  prefs.putString("schedules", jsonStr);
+  prefs.end();
+  Serial.println("Horarios guardados en Preferences.");
+}
+
+void cargarSchedules() {
+  Preferences prefs;
+  prefs.begin("horarios", true);
+  String jsonStr = prefs.getString("schedules", "");
+  prefs.end();
+
+  // Inicializar por defecto
+  for (int i = 0; i < 8; i++) {
+    schedules[i].active = false;
+    schedules[i].hour = 0;
+    schedules[i].minute = 0;
+    schedules[i].weekdays = 0;
+    schedules[i].target = 0;
+    schedules[i].action = 0;
+  }
+
+  if (jsonStr.length() > 0) {
+    DynamicJsonDocument doc(1500);
+    DeserializationError error = deserializeJson(doc, jsonStr);
+    if (!error) {
+      JsonArray arr = doc.as<JsonArray>();
+      int idx = 0;
+      for (JsonObject obj : arr) {
+        if (idx >= 8) break;
+        schedules[idx].active = obj["active"] | false;
+        schedules[idx].hour = obj["hour"] | 0;
+        schedules[idx].minute = obj["minute"] | 0;
+        schedules[idx].weekdays = obj["weekdays"] | 0;
+        schedules[idx].target = obj["target"] | 0;
+        schedules[idx].action = obj["action"] | 0;
+        idx++;
+      }
+      Serial.println("Horarios cargados exitosamente de Preferences.");
+    } else {
+      Serial.println("Fallo al deserializar horarios de Preferences.");
+    }
+  } else {
+    Serial.println("No hay horarios guardados en Preferences.");
+  }
+}
+
 Ticker secondTicker;
 
 void crearEstadoJson(JsonDocument& doc)
@@ -118,26 +196,42 @@ void crearEstadoJson(JsonDocument& doc)
   doc["tempColectorCrudo"] = colectorRaw;
   doc["aux1En"] = aux1En;
   doc["aux2En"] = aux2En;
+
+  JsonArray schedArr = doc.createNestedArray("schedules");
+  for (int i = 0; i < 8; i++) {
+    JsonObject obj = schedArr.createNestedObject();
+    obj["active"] = schedules[i].active;
+    obj["hour"] = schedules[i].hour;
+    obj["minute"] = schedules[i].minute;
+    obj["weekdays"] = schedules[i].weekdays;
+    obj["target"] = schedules[i].target;
+    obj["action"] = schedules[i].action;
+  }
 }
 
 void procesarComandosJson(JsonDocument& doc)
 {
-  if (doc.containsKey("intervalData")) intervalData = doc["intervalData"];
-  if (doc.containsKey("tempDif_on")) tempDif_on = doc["tempDif_on"];
-  if (doc.containsKey("tempDif_off")) tempDif_off = doc["tempDif_off"];
-  if (doc.containsKey("tempSet")) tempSet = doc["tempSet"];
-  if (doc.containsKey("minOnTime")) minOnTime = doc["minOnTime"];
-  if (doc.containsKey("minOffTime")) minOffTime = doc["minOffTime"];
-  if (doc.containsKey("maxOnTime")) maxOnTime = doc["maxOnTime"];
-  if (doc.containsKey("bombaPiletaConf")) bombaPiletaConf = doc["bombaPiletaConf"];
-  if (doc.containsKey("bombaCisternaConf")) bombaCisternaConf = doc["bombaCisternaConf"];
-  if (doc.containsKey("bombaTanqueConf")) bombaTanqueConf = doc["bombaTanqueConf"];
-  if (doc.containsKey("reflectoresConf")) reflectoresConf = doc["reflectoresConf"];
-  if (doc.containsKey("luzPiletaConf")) luzPiletaConf = doc["luzPiletaConf"];
-  if (doc.containsKey("luzGaleriaConf")) luzGaleriaConf = doc["luzGaleriaConf"];
-  if (doc.containsKey("luzGaleriaBordeConf")) luzGaleriaBordeConf = doc["luzGaleriaBordeConf"];
-  if (doc.containsKey("aux1En")) aux1En = doc["aux1En"];
-  if (doc.containsKey("aux2En")) aux2En = doc["aux2En"];
+  bool configChanged = false;
+
+  if (doc.containsKey("intervalData")) { intervalData = doc["intervalData"]; }
+  if (doc.containsKey("tempDif_on")) { tempDif_on = doc["tempDif_on"]; }
+  if (doc.containsKey("tempDif_off")) { tempDif_off = doc["tempDif_off"]; }
+  if (doc.containsKey("tempSet")) { tempSet = doc["tempSet"]; }
+  if (doc.containsKey("minOnTime")) { minOnTime = doc["minOnTime"]; }
+  if (doc.containsKey("minOffTime")) { minOffTime = doc["minOffTime"]; }
+  if (doc.containsKey("maxOnTime")) { maxOnTime = doc["maxOnTime"]; }
+  
+  if (doc.containsKey("bombaPiletaConf")) { bombaPiletaConf = doc["bombaPiletaConf"]; }
+  if (doc.containsKey("bombaCisternaConf")) { bombaCisternaConf = doc["bombaCisternaConf"]; }
+  if (doc.containsKey("bombaTanqueConf")) { bombaTanqueConf = doc["bombaTanqueConf"]; }
+  if (doc.containsKey("reflectoresConf")) { reflectoresConf = doc["reflectoresConf"]; }
+  if (doc.containsKey("luzPiletaConf")) { luzPiletaConf = doc["luzPiletaConf"]; }
+  if (doc.containsKey("luzGaleriaConf")) { luzGaleriaConf = doc["luzGaleriaConf"]; }
+  if (doc.containsKey("luzGaleriaBordeConf")) { luzGaleriaBordeConf = doc["luzGaleriaBordeConf"]; }
+  
+  if (doc.containsKey("aux1En")) { aux1En = doc["aux1En"]; }
+  if (doc.containsKey("aux2En")) { aux2En = doc["aux2En"]; }
+  
   if (doc.containsKey("IntercambioST")) {
     bool nuevo = doc["IntercambioST"];
     if (nuevo != IntercambioST)
@@ -146,16 +240,41 @@ void procesarComandosJson(JsonDocument& doc)
         guardarIntercambioST();
     }
   }
+  
+  if (doc.containsKey("patioSchedules") || doc.containsKey("schedules")) {
+    JsonArray schedArr = doc.containsKey("patioSchedules") ? doc["patioSchedules"].as<JsonArray>() : doc["schedules"].as<JsonArray>();
+    int idx = 0;
+    for (JsonObject obj : schedArr) {
+      if (idx >= 8) break;
+      schedules[idx].active = obj["active"] | false;
+      schedules[idx].hour = obj["hour"] | 0;
+      schedules[idx].minute = obj["minute"] | 0;
+      schedules[idx].weekdays = obj["weekdays"] | 0;
+      schedules[idx].target = obj["target"] | 0;
+      schedules[idx].action = obj["action"] | 0;
+      idx++;
+    }
+    for (int i = idx; i < 8; i++) {
+      schedules[i].active = false;
+    }
+    guardarSchedules();
+    configChanged = true;
+  }
+  
   if (doc.containsKey("Telemetria")) Telemetria = doc["Telemetria"];
+  
+  if (configChanged) {
+    actuadores();
+  }
 }
 
 void enviarDatos()
 {
-  StaticJsonDocument<1000> doc;
+  DynamicJsonDocument doc(2048);
   crearEstadoJson(doc);
 
-  char buffer[1024];
-  size_t n = serializeJson(doc, buffer);
+  char buffer[1500];
+  size_t n = serializeJson(doc, buffer, sizeof(buffer));
 
   mqttClient.publish("BALH142N1788/Patio", buffer, n);
 }
@@ -358,6 +477,74 @@ void actuadores()
   digitalWrite(salidaAux2, aux2En ? LOW : HIGH);  // Relé de lógica inversa
 }
 
+void evaluarHorarios() {
+  struct tm infoTiempo;
+  if (!obtenerHoraLocal(infoTiempo)) {
+    return; // Esperar a que NTP sincronice
+  }
+
+  // Ejecutar solo al cambiar de minuto
+  if (infoTiempo.tm_min == ultimoMinutoEvaluado) {
+    return;
+  }
+  ultimoMinutoEvaluado = infoTiempo.tm_min;
+
+  int diaHoy = infoTiempo.tm_wday; // 0=Domingo, 1=Lunes, ..., 6=Sábado
+  int horaHoy = infoTiempo.tm_hour;
+  int minHoy = infoTiempo.tm_min;
+
+  bool configChanged = false;
+
+  for (int i = 0; i < 8; i++) {
+    if (!schedules[i].active) continue;
+
+    // Verificar si el día de hoy está en la máscara de bits
+    if (!(schedules[i].weekdays & (1 << diaHoy))) continue;
+
+    // Verificar si coincide la hora y minuto
+    if (schedules[i].hour == horaHoy && schedules[i].minute == minHoy) {
+      int target = schedules[i].target;
+      int action = schedules[i].action;
+
+      // 0: Reflectores, 1: Luz Pileta, 2: Luz Galería, 3: Luz Galería Borde, 4: Bomba Pileta, 5: Bomba Cisterna, 6: Bomba Tanque
+      if (target == 0) {
+        reflectoresConf = action;
+        configChanged = true;
+        Serial.printf("Horario: reflectoresConf cambiado a %d\n", action);
+      } else if (target == 1) {
+        luzPiletaConf = action;
+        configChanged = true;
+        Serial.printf("Horario: luzPiletaConf cambiado a %d\n", action);
+      } else if (target == 2) {
+        luzGaleriaConf = action;
+        configChanged = true;
+        Serial.printf("Horario: luzGaleriaConf cambiado a %d\n", action);
+      } else if (target == 3) {
+        luzGaleriaBordeConf = action;
+        configChanged = true;
+        Serial.printf("Horario: luzGaleriaBordeConf cambiado a %d\n", action);
+      } else if (target == 4) {
+        bombaPiletaConf = action;
+        configChanged = true;
+        Serial.printf("Horario: bombaPiletaConf cambiado a %d\n", action);
+      } else if (target == 5) {
+        bombaCisternaConf = action;
+        configChanged = true;
+        Serial.printf("Horario: bombaCisternaConf cambiado a %d\n", action);
+      } else if (target == 6) {
+        bombaTanqueConf = action;
+        configChanged = true;
+        Serial.printf("Horario: bombaTanqueConf cambiado a %d\n", action);
+      }
+    }
+  }
+
+  if (configChanged) {
+    actuadores();
+    enviarDatos();
+  }
+}
+
 // =======================
 // SETUP
 // =======================
@@ -366,6 +553,13 @@ void setup()
   Serial.begin(115200);
 
   wifiConect();
+  
+  // Inicializar NTP para Argentina (GMT-3)
+  configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  
+  // Cargar horarios desde Preferences
+  cargarSchedules();
+
   otaConfig();
   mqttConfig();
   serverConfig();
@@ -413,6 +607,8 @@ void loop()
   ArduinoOTA.handle();
   handleMqtt();
   server.handleClient();
+  
+  evaluarHorarios();
   
   leerSensores();
   controlBombaPileta();

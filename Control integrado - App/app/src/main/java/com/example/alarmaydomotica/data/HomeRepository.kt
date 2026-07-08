@@ -25,5 +25,7 @@ interface HomeRepository {
     
     fun triggerPanic()
     fun clearLogs()
+    
+    fun sendSchedules(device: String, schedules: List<com.example.alarmaydomotica.data.model.ScheduleEvent>)
 }
 

@@ -22,6 +22,13 @@ fun MainNavigation() {
         entry<Main> {
           MainScreen(onItemClick = { navKey -> backStack.add(navKey) }, modifier = Modifier)
         }
+        entry<Programacion> { key ->
+          com.example.alarmaydomotica.ui.screens.ProgramacionScreen(
+            device = key.device,
+            repository = com.example.alarmaydomotica.data.DefaultDataRepository(),
+            onBack = { backStack.removeLastOrNull() }
+          )
+        }
       },
   )
 }

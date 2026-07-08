@@ -10,7 +10,9 @@
 #include <Ticker.h>
 #include <ESP8266WebServer.h> // Librería para servidor HTTP
 #include <EEPROM.h>
+#include <time.h>
 #define MQTT_MAX_PACKET_SIZE 1024
+
 
 // Definición de pines
 #define SenTyH 14
@@ -22,6 +24,11 @@
 #define LuzVereda 5
 #define Camaras 3
 int fotoPin = A0;
+
+// Prototipos de funciones
+void actuadores();
+void enviarDatos();
+void saveConfig();
 
 // Definición de variables y constantes --------------------------------------------------------------
 int intervalData = 60;                // Intervalo de tiempo[seg] en el que se envían datos
@@ -75,6 +82,28 @@ ESP8266WebServer server(80); // Inicializa el servidor HTTP en el puerto 80
 // --- PERSISTENCIA EEPROM ---
 const uint32_t EEPROM_SIGNATURE = 0x55AA7788;
 
+struct ScheduleRule {
+  bool active;
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t weekdays;  // Bit 0 = Dom, Bit 1 = Lun, ..., Bit 6 = Sab
+  uint8_t target;    // 0: Reflectores, 1: Luz Vereda, 2: Sirena
+  uint8_t action;    // 0: Apagado, 1: Encendido, 2: Auto
+};
+
+ScheduleRule schedules[8];
+int ultimoMinutoEvaluado = -1;
+
+// Retorna true si la hora está sincronizada
+bool obtenerHoraLocal(struct tm &infoTiempo) {
+  time_t ahora = time(nullptr);
+  if (ahora < 1600000000) { // Septiembre 2020 aprox
+    return false; // No sincronizado todavía
+  }
+  localtime_r(&ahora, &infoTiempo);
+  return true;
+}
+
 struct Config {
   uint32_t signature;
   int SirenaConf;
@@ -90,6 +119,7 @@ struct Config {
   int movRst;
   bool PIR1En;
   bool PIR2En;
+  ScheduleRule schedules[8];
 } config;
 
 void loadConfig() {
@@ -112,6 +142,16 @@ void loadConfig() {
     config.PIR1En = false;
     config.PIR2En = false;
     
+    // Inicializar horarios inactivos
+    for (int i = 0; i < 8; i++) {
+      config.schedules[i].active = false;
+      config.schedules[i].hour = 0;
+      config.schedules[i].minute = 0;
+      config.schedules[i].weekdays = 0;
+      config.schedules[i].target = 0;
+      config.schedules[i].action = 0;
+    }
+    
     EEPROM.put(0, config);
     EEPROM.commit();
   }
@@ -130,6 +170,9 @@ void loadConfig() {
   movRst = config.movRst;
   PIR1En = config.PIR1En;
   PIR2En = config.PIR2En;
+  for (int i = 0; i < 8; i++) {
+    schedules[i] = config.schedules[i];
+  }
 }
 
 void saveConfig() {
@@ -146,6 +189,9 @@ void saveConfig() {
   config.movRst = movRst;
   config.PIR1En = PIR1En;
   config.PIR2En = PIR2En;
+  for (int i = 0; i < 8; i++) {
+    config.schedules[i] = schedules[i];
+  }
   
   EEPROM.put(0, config);
   EEPROM.commit();
@@ -158,7 +204,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   memcpy(payload_string, payload, length);
   payload_string[length] = '\0'; // Terminar la cadena con NULL
 
-  StaticJsonDocument<800> doc;
+  DynamicJsonDocument doc(1500);
   DeserializationError error = deserializeJson(doc, payload_string);
   
   if (error)
@@ -194,15 +240,36 @@ void callback(char *topic, byte *payload, unsigned int length)
   if (doc.containsKey("PIR1En"))            { PIR1En = doc["PIR1En"]; configChanged = true; }
   if (doc.containsKey("PIR2En"))            { PIR2En = doc["PIR2En"]; configChanged = true; }
   if (doc.containsKey("Telemetria"))        { Telemetria = doc["Telemetria"]; }
+  
+  if (doc.containsKey("frenteSchedules") || doc.containsKey("schedules")) {
+    JsonArray schedArr = doc.containsKey("frenteSchedules") ? doc["frenteSchedules"].as<JsonArray>() : doc["schedules"].as<JsonArray>();
+    int idx = 0;
+    for (JsonObject obj : schedArr) {
+      if (idx >= 8) break;
+      schedules[idx].active = obj["active"] | false;
+      schedules[idx].hour = obj["hour"] | 0;
+      schedules[idx].minute = obj["minute"] | 0;
+      schedules[idx].weekdays = obj["weekdays"] | 0;
+      schedules[idx].target = obj["target"] | 0;
+      schedules[idx].action = obj["action"] | 0;
+      idx++;
+    }
+    // Si enviaron menos de 8, poner el resto inactivas
+    for (int i = idx; i < 8; i++) {
+      schedules[i].active = false;
+    }
+    configChanged = true;
+  }
 
   if (configChanged) {
     saveConfig();
+    actuadores();
   }
 }
 
 void enviarDatos()
 {
-  StaticJsonDocument<500> doc;
+  DynamicJsonDocument doc(1500);
 
   doc["Temperatura"] = TEMPERATURA;
   doc["Humedad"] = HUMEDAD;
@@ -227,8 +294,19 @@ void enviarDatos()
   doc["PIR1En"] = PIR1En;
   doc["PIR2En"] = PIR2En;
 
+  JsonArray schedArr = doc.createNestedArray("schedules");
+  for (int i = 0; i < 8; i++) {
+    JsonObject obj = schedArr.createNestedObject();
+    obj["active"] = schedules[i].active;
+    obj["hour"] = schedules[i].hour;
+    obj["minute"] = schedules[i].minute;
+    obj["weekdays"] = schedules[i].weekdays;
+    obj["target"] = schedules[i].target;
+    obj["action"] = schedules[i].action;
+  }
+
   // Convertir el documento JSON en una cadena de texto
-  char buffer[512];
+  char buffer[1200];
   size_t n = serializeJson(doc, buffer, sizeof(buffer));
 
   // Publicar el JSON en el topic
@@ -380,6 +458,11 @@ void handleMqtt() {
 }
 
 // --- CONTENIDO HTML DEL DASHBOARD (PROGMEM) ---
+//#define OTA_MINIMO 1
+
+#ifdef OTA_MINIMO
+const char INDEX_HTML[] PROGMEM = "M";
+#else
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="es">
@@ -702,6 +785,28 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             color: var(--text-muted);
             font-size: 0.8rem;
             padding: 20px 0;
+            font-size: 0.8rem;
+        }
+        .day-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            background: rgba(0,0,0,0.2);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .day-btn.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: transparent;
+            box-shadow: 0 0 6px var(--primary);
         }
     </style>
 </head>
@@ -874,6 +979,81 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 <input type="number" id="set-int" onblur="sendConfig('interval_data', parseInt(this.value))">
             </div>
         </div>
+
+        <!-- Tarjeta Temporizadores Horarios -->
+        <div class="card" style="grid-column: 1 / -1;">
+            <div class="card-title">
+                <span>Programación Horaria (Temporizadores)</span>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                <span class="telemetry-label">Seleccionar Regla:</span>
+                <select id="select-regla" onchange="cargarReglaEnUI(this.value)" style="background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 8px; font-family: inherit; font-size: 0.9rem;">
+                    <option value="0">Regla 1</option>
+                    <option value="1">Regla 2</option>
+                    <option value="2">Regla 3</option>
+                    <option value="3">Regla 4</option>
+                    <option value="4">Regla 5</option>
+                    <option value="5">Regla 6</option>
+                    <option value="6">Regla 7</option>
+                    <option value="7">Regla 8</option>
+                </select>
+                <span id="regla-active-indicator" style="font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 6px;">--</span>
+            </div>
+
+            <div id="editor-regla" style="border: 1px solid var(--border-color); padding: 16px; border-radius: 12px; background: rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 12px;">
+                <div class="toggle-container">
+                    <span class="telemetry-label">Regla Activa</span>
+                    <label class="switch">
+                        <input type="checkbox" id="regla-active" onchange="actualizarReglaLocal()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Hora de Ejecución:</span>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="number" id="regla-hora" min="0" max="23" placeholder="HH" onchange="actualizarReglaLocal()" style="width: 60px; text-align: center; background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 4px; border-radius: 6px;">
+                        <span style="color: var(--text-muted)">:</span>
+                        <input type="number" id="regla-minuto" min="0" max="59" placeholder="MM" onchange="actualizarReglaLocal()" style="width: 60px; text-align: center; background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 4px; border-radius: 6px;">
+                    </div>
+                </div>
+
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Dispositivo Destino:</span>
+                    <select id="regla-target" onchange="actualizarReglaLocal()" style="background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 6px; border-radius: 6px; font-family: inherit;">
+                        <option value="0">Reflectores</option>
+                        <option value="1">Luz Vereda</option>
+                        <option value="2">Sirena/Alarma</option>
+                    </select>
+                </div>
+
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Modo / Acción:</span>
+                    <select id="regla-action" onchange="actualizarReglaLocal()" style="background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 6px; border-radius: 6px; font-family: inherit;">
+                        <option value="0">Apagado (OFF)</option>
+                        <option value="1">Encendido (ON)</option>
+                        <option value="2">Automático (AUTO)</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <span class="control-label">Días Activos</span>
+                    <div style="display: flex; justify-content: space-between; gap: 4px;">
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(0)">D</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(1)">L</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(2)">M</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(3)">M</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(4)">J</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(5)">V</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(6)">S</button>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="guardarTodosLosHorarios()" style="width: 100%; background: var(--primary); color: #fff; border: none; padding: 10px; border-radius: 10px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-family: inherit;">
+                Guardar Todos los Horarios
+            </button>
+        </div>
     </div>
 
     <div id="toast">Configuración Guardada ✓</div>
@@ -961,9 +1141,105 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 updateInputIfNotActive("set-movrst", data.mov_rst);
                 updateInputIfNotActive("set-int", data.interval_data);
 
+                if (!schedulesInitialized && data.schedules) {
+                    inicializarHorarios(data.schedules);
+                    schedulesInitialized = true;
+                }
+
             } catch (e) {
                 document.getElementById("conn-dot").className = "status-dot";
                 document.getElementById("conn-text").innerText = "Desconectado";
+            }
+        }
+
+        let localSchedules = [];
+        let currentReglaIdx = 0;
+        let schedulesInitialized = false;
+
+        function inicializarHorarios(schedulesFromApi) {
+            localSchedules = schedulesFromApi || [];
+            while (localSchedules.length < 8) {
+                localSchedules.push({ active: false, hour: 0, minute: 0, weekdays: 0, target: 0, action: 0 });
+            }
+            cargarReglaEnUI(currentReglaIdx);
+        }
+
+        function cargarReglaEnUI(idx) {
+            currentReglaIdx = parseInt(idx);
+            const rule = localSchedules[currentReglaIdx];
+            if (!rule) return;
+            
+            document.getElementById("regla-active").checked = rule.active;
+            document.getElementById("regla-hora").value = rule.hour;
+            document.getElementById("regla-minuto").value = rule.minute;
+            document.getElementById("regla-target").value = rule.target;
+            document.getElementById("regla-action").value = rule.action;
+
+            const ind = document.getElementById("regla-active-indicator");
+            if (rule.active) {
+                ind.innerText = "ACTIVA";
+                ind.style.background = "rgba(16, 185, 129, 0.2)";
+                ind.style.color = "var(--accent-green)";
+            } else {
+                ind.innerText = "INACTIVA";
+                ind.style.background = "rgba(255, 255, 255, 0.05)";
+                ind.style.color = "var(--text-muted)";
+            }
+
+            // Actualizar botones de días
+            const btns = document.querySelectorAll(".day-btn");
+            btns.forEach((btn, dIdx) => {
+                const bit = 1 << dIdx;
+                if ((rule.weekdays & bit) !== 0) {
+                    btn.classList.add("active");
+                } else {
+                    btn.classList.remove("active");
+                }
+            });
+        }
+
+        function actualizarReglaLocal() {
+            const rule = localSchedules[currentReglaIdx];
+            if (!rule) return;
+            rule.active = document.getElementById("regla-active").checked;
+            rule.hour = parseInt(document.getElementById("regla-hora").value) || 0;
+            rule.minute = parseInt(document.getElementById("regla-minuto").value) || 0;
+            rule.target = parseInt(document.getElementById("regla-target").value) || 0;
+            rule.action = parseInt(document.getElementById("regla-action").value) || 0;
+            
+            const ind = document.getElementById("regla-active-indicator");
+            if (rule.active) {
+                ind.innerText = "ACTIVA";
+                ind.style.background = "rgba(16, 185, 129, 0.2)";
+                ind.style.color = "var(--accent-green)";
+            } else {
+                ind.innerText = "INACTIVA";
+                ind.style.background = "rgba(255, 255, 255, 0.05)";
+                ind.style.color = "var(--text-muted)";
+            }
+        }
+
+        function toggleDiaRegla(dIdx) {
+            const rule = localSchedules[currentReglaIdx];
+            if (!rule) return;
+            const bit = 1 << dIdx;
+            rule.weekdays ^= bit;
+            cargarReglaEnUI(currentReglaIdx);
+        }
+
+        async function guardarTodosLosHorarios() {
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ schedules: localSchedules })
+                });
+                if (response.ok) {
+                    showToast();
+                    pollStatus();
+                }
+            } catch (e) {
+                console.error("Fallo al guardar horarios");
             }
         }
 
@@ -992,13 +1268,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             }
         }
 
-        // Iniciar polling
         pollStatus();
         setInterval(pollStatus, 3000);
     </script>
 </body>
 </html>
 )rawliteral";
+#endif
 
 // --- API WEB SERVER HANDLERS ---
 void handleRoot() {
@@ -1010,7 +1286,7 @@ void handleNotFound() {
 }
 
 void handleApiStatus() {
-  StaticJsonDocument<800> doc;
+  DynamicJsonDocument doc(1500);
   doc["temp"] = TEMPERATURA;
   doc["hum"] = HUMEDAD;
   doc["luz"] = fotoval;
@@ -1037,6 +1313,17 @@ void handleApiStatus() {
   doc["valor_noche"] = ValorNoche;
   doc["histeresis_luz"] = histeresisLuz;
 
+  JsonArray schedArr = doc.createNestedArray("schedules");
+  for (int i = 0; i < 8; i++) {
+    JsonObject obj = schedArr.createNestedObject();
+    obj["active"] = schedules[i].active;
+    obj["hour"] = schedules[i].hour;
+    obj["minute"] = schedules[i].minute;
+    obj["weekdays"] = schedules[i].weekdays;
+    obj["target"] = schedules[i].target;
+    obj["action"] = schedules[i].action;
+  }
+
   String json;
   serializeJson(doc, json);
   server.send(200, "application/json", json);
@@ -1049,7 +1336,7 @@ void handleApiConfig() {
   }
   
   String body = server.arg("plain");
-  StaticJsonDocument<500> doc;
+  DynamicJsonDocument doc(1500);
   DeserializationError error = deserializeJson(doc, body);
   if (error) {
     server.send(400, "application/json", "{\"error\":\"JSON Invalido\"}");
@@ -1072,8 +1359,28 @@ void handleApiConfig() {
   if (doc.containsKey("pir1_en"))            { PIR1En = doc["pir1_en"]; configChanged = true; }
   if (doc.containsKey("pir2_en"))            { PIR2En = doc["pir2_en"]; configChanged = true; }
   
+  if (doc.containsKey("schedules")) {
+    JsonArray schedArr = doc["schedules"].as<JsonArray>();
+    int idx = 0;
+    for (JsonObject obj : schedArr) {
+      if (idx >= 8) break;
+      schedules[idx].active = obj["active"] | false;
+      schedules[idx].hour = obj["hour"] | 0;
+      schedules[idx].minute = obj["minute"] | 0;
+      schedules[idx].weekdays = obj["weekdays"] | 0;
+      schedules[idx].target = obj["target"] | 0;
+      schedules[idx].action = obj["action"] | 0;
+      idx++;
+    }
+    for (int i = idx; i < 8; i++) {
+      schedules[i].active = false;
+    }
+    configChanged = true;
+  }
+  
   if (configChanged) {
     saveConfig();
+    actuadores();
   }
   
   server.send(200, "application/json", "{\"status\":\"ok\"}");
@@ -1086,7 +1393,11 @@ void setup()
   loadConfig();
 
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoConnect(true);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, wifiPassword);
+  // Inicializar NTP para Argentina (GMT-3)
+  configTime(-3 * 3600, 0, "pool.ntp.org", "time.nist.gov");
   // Conexión no bloqueante: se gestionará en el handleWiFi() de fondo
 
   ArduinoOTA.setHostname("Control_Frente");
@@ -1156,10 +1467,63 @@ void setup()
   delay(2000);
 }
 
+void evaluarHorarios() {
+  struct tm infoTiempo;
+  if (!obtenerHoraLocal(infoTiempo)) {
+    return; // Esperar a que NTP sincronice
+  }
+
+  // Ejecutar solo al cambiar de minuto
+  if (infoTiempo.tm_min == ultimoMinutoEvaluado) {
+    return;
+  }
+  ultimoMinutoEvaluado = infoTiempo.tm_min;
+
+  int diaHoy = infoTiempo.tm_wday; // 0=Domingo, 1=Lunes, ..., 6=Sábado
+  int horaHoy = infoTiempo.tm_hour;
+  int minHoy = infoTiempo.tm_min;
+
+  bool configChanged = false;
+
+  for (int i = 0; i < 8; i++) {
+    if (!schedules[i].active) continue;
+
+    // Verificar si el día de hoy está en la máscara de bits
+    if (!(schedules[i].weekdays & (1 << diaHoy))) continue;
+
+    // Verificar si coincide la hora y minuto
+    if (schedules[i].hour == horaHoy && schedules[i].minute == minHoy) {
+      int target = schedules[i].target;
+      int action = schedules[i].action;
+
+      if (target == 0) { // Reflectores
+        ReflectoresConf = action;
+        configChanged = true;
+        Serial.printf("Horario: ReflectoresConf cambiado a %d\n", action);
+      } else if (target == 1) { // Luz Vereda
+        LuzVeredaConf = action;
+        configChanged = true;
+        Serial.printf("Horario: LuzVeredaConf cambiado a %d\n", action);
+      } else if (target == 2) { // Sirena
+        SirenaConf = action;
+        configChanged = true;
+        Serial.printf("Horario: SirenaConf cambiado a %d\n", action);
+      }
+    }
+  }
+
+  if (configChanged) {
+    saveConfig();
+    actuadores();
+    enviarDatos();
+  }
+}
+
 // --- LOOP ---
 void loop()
 {
   ArduinoOTA.handle();
+  evaluarHorarios();
 
   handleWiFi();
   handleMqtt();

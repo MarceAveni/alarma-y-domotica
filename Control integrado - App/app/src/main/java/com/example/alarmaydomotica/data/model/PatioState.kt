@@ -36,5 +36,6 @@ data class PatioState(
     val ValorNoche: Int = 500,
     val histeresisLuz: Int = 20,
     val aux1En: Boolean = false,
-    val aux2En: Boolean = false
+    val aux2En: Boolean = false,
+    val schedules: List<ScheduleEvent> = emptyList()
 )

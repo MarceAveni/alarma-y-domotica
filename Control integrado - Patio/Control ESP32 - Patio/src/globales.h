@@ -1,6 +1,21 @@
 #pragma once
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <time.h>
+
+struct ScheduleRule {
+  bool active;
+  uint8_t hour;
+  uint8_t minute;
+  uint8_t weekdays;  // Bit 0 = Dom, Bit 1 = Lun, ..., Bit 6 = Sab
+  uint8_t target;    // 0: Reflectores, 1: Luz Pileta, 2: Luz Galería, 3: Luz Galería Borde, 4: Bomba Pileta, 5: Bomba Cisterna, 6: Bomba Tanque
+  uint8_t action;    // 0: Apagado, 1: Encendido, 2: Auto
+};
+
+extern ScheduleRule schedules[8];
+extern int ultimoMinutoEvaluado;
+
+bool obtenerHoraLocal(struct tm &infoTiempo);
 
 // === MAPEO DE PINES ESP32 ===
 // Notas: elegir pines seguros para ESP32 (evitar GPIO1/GPIO3, y pines que comprometan el boot)
@@ -82,3 +97,6 @@ extern unsigned long maxOnTime;   // X min máximo encendida
 
 void crearEstadoJson(JsonDocument& doc);
 void procesarComandosJson(JsonDocument& doc);
+void actuadores();
+void enviarDatos();
+void guardarSchedules();

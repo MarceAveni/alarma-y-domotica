@@ -203,13 +203,19 @@ class DefaultHomeRepository(
             val luz = jsonDoc["luzAmbiente"]?.jsonPrimitive?.content ?: "dia"
             val interval = jsonDoc["intervalData"]?.jsonPrimitive?.intOrNull ?: 60
 
+            val schedulesJson = jsonDoc["schedules"]?.jsonArray
+            val schedulesList = schedulesJson?.map { elem ->
+                json.decodeFromJsonElement<com.example.alarmaydomotica.data.model.ScheduleEvent>(elem)
+            } ?: emptyList()
+
             _esp01State.value = ESP01State(
                 canal1ST = c1ST,
                 canal1Conf = c1Conf,
                 canal2ST = c2ST,
                 canal2Conf = c2Conf,
                 luzAmbiente = luz,
-                intervalData = interval
+                intervalData = interval,
+                schedules = schedulesList
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error parseando MQTT ESP01: $payload", e)
@@ -226,13 +232,19 @@ class DefaultHomeRepository(
             val luz = jsonDoc["luz_ambiente"]?.jsonPrimitive?.content ?: "dia"
             val interval = jsonDoc["interval_data"]?.jsonPrimitive?.intOrNull ?: 60
 
+            val schedulesJson = jsonDoc["schedules"]?.jsonArray
+            val schedulesList = schedulesJson?.map { elem ->
+                json.decodeFromJsonElement<com.example.alarmaydomotica.data.model.ScheduleEvent>(elem)
+            } ?: emptyList()
+
             _esp01State.value = ESP01State(
                 canal1ST = c1ST,
                 canal1Conf = c1Conf,
                 canal2ST = c2ST,
                 canal2Conf = c2Conf,
                 luzAmbiente = luz,
-                intervalData = interval
+                intervalData = interval,
+                schedules = schedulesList
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error parseando HTTP ESP01: $payload", e)
@@ -306,6 +318,11 @@ class DefaultHomeRepository(
             val sirConf = jsonDoc["SirConf"]?.jsonPrimitive?.intOrNull ?: 0
             val refConf = jsonDoc["RefConf"]?.jsonPrimitive?.intOrNull ?: 0
             val luzVConf = jsonDoc["LuzVConf"]?.jsonPrimitive?.intOrNull ?: 0
+            
+            val schedulesJson = jsonDoc["schedules"]?.jsonArray
+            val schedulesList = schedulesJson?.map { elem ->
+                json.decodeFromJsonElement<com.example.alarmaydomotica.data.model.ScheduleEvent>(elem)
+            } ?: emptyList()
 
             val oldState = _frenteState.value
             val pir1Triggered = sensorTrigger == 1
@@ -330,7 +347,8 @@ class DefaultHomeRepository(
                 sirenaConf = sirConf,
                 camarasEn = camaras,
                 pir1En = pir1,
-                pir2En = pir2
+                pir2En = pir2,
+                schedules = schedulesList
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error parseando JSON MQTT del Frente", e)
@@ -351,6 +369,11 @@ class DefaultHomeRepository(
             val sirConf = jsonDoc["sirena_conf"]?.jsonPrimitive?.intOrNull ?: 0
             val refConf = jsonDoc["reflectores_conf"]?.jsonPrimitive?.intOrNull ?: 0
             val luzVConf = jsonDoc["luz_vereda_conf"]?.jsonPrimitive?.intOrNull ?: 0
+
+            val schedulesJson = jsonDoc["schedules"]?.jsonArray
+            val schedulesList = schedulesJson?.map { elem ->
+                json.decodeFromJsonElement<com.example.alarmaydomotica.data.model.ScheduleEvent>(elem)
+            } ?: emptyList()
 
             val oldState = _frenteState.value
             val pir1Triggered = sensorTrigger == 1
@@ -375,7 +398,8 @@ class DefaultHomeRepository(
                 sirenaConf = sirConf,
                 camarasEn = camaras,
                 pir1En = pir1,
-                pir2En = pir2
+                pir2En = pir2,
+                schedules = schedulesList
             )
         } catch (e: Exception) {
             Log.e(TAG, "Error parseando JSON HTTP del Frente", e)
@@ -650,6 +674,68 @@ class DefaultHomeRepository(
             }
         } catch (e: Exception) {
             Log.v(TAG, "Polling Frente local falló: ${e.message}")
+        }
+    }
+
+    override fun sendSchedules(device: String, schedules: List<com.example.alarmaydomotica.data.model.ScheduleEvent>) {
+        val isMqttMode = _isMqttConnected.value && !_isLocalMode.value
+        
+        externalScope.launch(Dispatchers.IO) {
+            try {
+                val schedulesJsonArray = json.encodeToJsonElement(schedules).jsonArray
+                
+                if (isMqttMode) {
+                    val mqttKey = when (device) {
+                        "Frente" -> "frenteSchedules"
+                        "Patio" -> "patioSchedules"
+                        "ESP01" -> "esp01Schedules"
+                        else -> "schedules"
+                    }
+                    val jsonPayload = json.encodeToString(
+                        JsonObject.serializer(),
+                        buildJsonObject {
+                            put(mqttKey, schedulesJsonArray)
+                        }
+                    )
+                    val message = MqttMessage(jsonPayload.toByteArray()).apply { qos = 1 }
+                    mqttClient?.publish("BALH142N1788/Aveni793", message)
+                    Log.d(TAG, "Schedules MQTT enviados para $device: $jsonPayload")
+                } else {
+                    val jsonPayload = json.encodeToString(
+                        JsonObject.serializer(),
+                        buildJsonObject {
+                            put("schedules", schedulesJsonArray)
+                        }
+                    )
+                    val body = jsonPayload.toRequestBody(jsonMediaType)
+                    val (ip, path) = when (device) {
+                        "Frente" -> Pair(frenteIp, "/api/config")
+                        "Patio" -> Pair(patioIp, "/control")
+                        "ESP01" -> Pair(esp01Ip, "/api/config")
+                        else -> Pair("", "")
+                    }
+                    if (ip.isNotEmpty()) {
+                        val request = Request.Builder()
+                            .url("http://$ip$path")
+                            .post(body)
+                            .build()
+                        okHttpClient.newCall(request).execute().use { response ->
+                            if (response.isSuccessful) {
+                                Log.d(TAG, "Schedules HTTP local exitoso para $device")
+                                when (device) {
+                                    "Frente" -> _frenteState.value = _frenteState.value.copy(schedules = schedules)
+                                    "Patio" -> _patioState.value = _patioState.value.copy(schedules = schedules)
+                                    "ESP01" -> _esp01State.value = _esp01State.value.copy(schedules = schedules)
+                                }
+                            } else {
+                                Log.e(TAG, "Error HTTP local Schedules para $device: ${response.code}")
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Fallo al enviar schedules para $device", e)
+            }
         }
     }
 }

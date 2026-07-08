@@ -29,6 +29,7 @@ import com.example.alarmaydomotica.data.model.PatioState
 @Composable
 fun DomoticaScreen(
     repository: HomeRepository,
+    onItemClick: (androidx.navigation3.runtime.NavKey) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val frenteState by repository.frenteState.collectAsState()
@@ -155,6 +156,57 @@ fun DomoticaScreen(
                 onCheckedChange = { repository.sendPatioCommand("Telemetria", it) },
                 modifier = Modifier.weight(1f)
             )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+        SectionHeader(title = "Programación Horaria", icon = Icons.Default.AccessTime, tint = BlueNeon)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(1.dp, BorderColor, RoundedCornerShape(16.dp)),
+            colors = CardDefaults.cardColors(containerColor = DarkSurface),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Configura los horarios automáticos de encendido/apagado para tus dispositivos.",
+                    color = OnSurfaceDark.copy(alpha = 0.7f),
+                    fontSize = 13.sp
+                )
+                
+                Button(
+                    onClick = { onItemClick(com.example.alarmaydomotica.Programacion("Frente")) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueNeon, contentColor = Color.Black)
+                ) {
+                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Horarios del Frente (Luces y Alarma)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+
+                Button(
+                    onClick = { onItemClick(com.example.alarmaydomotica.Programacion("Patio")) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueNeon, contentColor = Color.Black)
+                ) {
+                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Horarios del Patio (Luces y Bombas)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+
+                Button(
+                    onClick = { onItemClick(com.example.alarmaydomotica.Programacion("ESP01")) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = BlueNeon, contentColor = Color.Black)
+                ) {
+                    Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Horarios del ESP01 (Luces Galería)", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
         }
     }
 }

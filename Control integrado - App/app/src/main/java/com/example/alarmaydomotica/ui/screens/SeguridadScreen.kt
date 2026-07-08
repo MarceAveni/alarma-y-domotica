@@ -31,6 +31,7 @@ import androidx.compose.ui.layout.layout
 @Composable
 fun SeguridadScreen(
     repository: HomeRepository,
+    onItemClick: ((androidx.navigation3.runtime.NavKey) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val frenteState by repository.frenteState.collectAsState()

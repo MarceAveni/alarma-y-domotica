@@ -31,6 +31,7 @@ import com.example.alarmaydomotica.data.model.PatioState
 @Composable
 fun ConfiguracionScreen(
     repository: HomeRepository,
+    onItemClick: ((androidx.navigation3.runtime.NavKey) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current

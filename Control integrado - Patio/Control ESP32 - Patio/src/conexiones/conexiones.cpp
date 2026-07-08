@@ -263,7 +263,7 @@ void otaConfig()
 
 void handleStatus()
 {
-  StaticJsonDocument<1000> doc;
+  DynamicJsonDocument doc(2048);
   crearEstadoJson(doc);
   String response;
   serializeJson(doc, response);
@@ -279,7 +279,7 @@ void handleControl()
   }
 
   String body = server.arg("plain");
-  StaticJsonDocument<1000> doc;
+  DynamicJsonDocument doc(2048);
   DeserializationError error = deserializeJson(doc, body);
   if (error)
   {
@@ -289,7 +289,7 @@ void handleControl()
 
   procesarComandosJson(doc);
 
-  StaticJsonDocument<1000> responseDoc;
+  DynamicJsonDocument responseDoc(2048);
   crearEstadoJson(responseDoc);
   String response;
   serializeJson(responseDoc, response);
@@ -530,6 +530,27 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             pointer-events: none;
         }
         .toast.show { opacity: 1; transform: translateY(0); }
+        .day-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 1px solid var(--border-color);
+            background: rgba(0,0,0,0.2);
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .day-btn.active {
+            background: var(--accent-cyan);
+            color: #000;
+            border-color: transparent;
+            box-shadow: 0 0 6px var(--accent-cyan);
+        }
     </style>
 </head>
 <body>
@@ -719,6 +740,85 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 </div>
             </div>
         </div>
+
+        <!-- Tarjeta Temporizadores Horarios -->
+        <div class="card" style="grid-column: 1 / -1;">
+            <div class="card-title">
+                <span>Programación Horaria (Temporizadores)</span>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px;">
+                <span class="telemetry-label">Seleccionar Regla:</span>
+                <select id="select-regla" onchange="cargarReglaEnUI(this.value)" style="background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 6px 12px; border-radius: 8px; font-family: inherit; font-size: 0.9rem;">
+                    <option value="0">Regla 1</option>
+                    <option value="1">Regla 2</option>
+                    <option value="2">Regla 3</option>
+                    <option value="3">Regla 4</option>
+                    <option value="4">Regla 5</option>
+                    <option value="5">Regla 6</option>
+                    <option value="6">Regla 7</option>
+                    <option value="7">Regla 8</option>
+                </select>
+                <span id="regla-active-indicator" style="font-size: 0.8rem; font-weight: 600; padding: 2px 8px; border-radius: 6px;">--</span>
+            </div>
+
+            <div id="editor-regla" style="border: 1px solid var(--border-color); padding: 16px; border-radius: 12px; background: rgba(0,0,0,0.15); display: flex; flex-direction: column; gap: 12px;">
+                <div class="switch-row">
+                    <span class="telemetry-label">Regla Activa</span>
+                    <label class="switch">
+                        <input type="checkbox" id="regla-active" onchange="actualizarReglaLocal()">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Hora de Ejecución:</span>
+                    <div style="display: flex; gap: 4px; align-items: center;">
+                        <input type="number" id="regla-hora" min="0" max="23" placeholder="HH" onchange="actualizarReglaLocal()" style="width: 60px; text-align: center; background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 4px; border-radius: 6px;">
+                        <span style="color: var(--text-muted)">:</span>
+                        <input type="number" id="regla-minuto" min="0" max="59" placeholder="MM" onchange="actualizarReglaLocal()" style="width: 60px; text-align: center; background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 4px; border-radius: 6px;">
+                    </div>
+                </div>
+
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Dispositivo Destino:</span>
+                    <select id="regla-target" onchange="actualizarReglaLocal()" style="background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 6px; border-radius: 6px; font-family: inherit;">
+                        <option value="0">Reflectores</option>
+                        <option value="1">Luz Pileta</option>
+                        <option value="2">Luz Galería</option>
+                        <option value="3">Borde Galería</option>
+                        <option value="4">Bomba Pileta</option>
+                        <option value="5">Bomba Cisterna</option>
+                        <option value="6">Bomba Tanque</option>
+                    </select>
+                </div>
+
+                <div class="telemetry-row">
+                    <span class="telemetry-label">Modo / Acción:</span>
+                    <select id="regla-action" onchange="actualizarReglaLocal()" style="background: rgba(0,0,0,0.4); color: #fff; border: 1px solid var(--border-color); padding: 6px; border-radius: 6px; font-family: inherit;">
+                        <option value="0">Apagado (OFF)</option>
+                        <option value="1">Encendido (ON)</option>
+                        <option value="2">Automático (AUTO)</option>
+                    </select>
+                </div>
+
+                <div style="display: flex; flex-direction: column; gap: 6px;">
+                    <span class="control-label">Días Activos</span>
+                    <div style="display: flex; justify-content: space-between; gap: 4px;">
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(0)">D</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(1)">L</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(2)">M</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(3)">M</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(4)">J</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(5)">V</button>
+                        <button type="button" class="day-btn" onclick="toggleDiaRegla(6)">S</button>
+                    </div>
+                </div>
+            </div>
+
+            <button onclick="guardarTodosLosHorarios()" style="width: 100%; background: var(--primary); color: #fff; border: none; padding: 10px; border-radius: 10px; font-weight: 600; cursor: pointer; transition: background 0.2s; font-family: inherit;">
+                Guardar Todos los Horarios
+            </button>
+        </div>
     </div>
 
     <div id="toast" class="toast">Configuración aplicada</div>
@@ -855,9 +955,105 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
                 document.getElementById("val-temp-techo").innerText = data.tempTecho.toFixed(1) + "°C";
                 document.getElementById("val-hum-techo").innerText = data.humTecho.toFixed(0) + "%";
 
+                if (!schedulesInitialized && data.schedules) {
+                    inicializarHorarios(data.schedules);
+                    schedulesInitialized = true;
+                }
+
             } catch (e) {
                 document.getElementById("conn-dot").className = "status-dot";
                 document.getElementById("conn-text").innerText = "Desconectado";
+            }
+        }
+
+        let localSchedules = [];
+        let currentReglaIdx = 0;
+        let schedulesInitialized = false;
+
+        function inicializarHorarios(schedulesFromApi) {
+            localSchedules = schedulesFromApi || [];
+            while (localSchedules.length < 8) {
+                localSchedules.push({ active: false, hour: 0, minute: 0, weekdays: 0, target: 0, action: 0 });
+            }
+            cargarReglaEnUI(currentReglaIdx);
+        }
+
+        function cargarReglaEnUI(idx) {
+            currentReglaIdx = parseInt(idx);
+            const rule = localSchedules[currentReglaIdx];
+            if (!rule) return;
+            
+            document.getElementById("regla-active").checked = rule.active;
+            document.getElementById("regla-hora").value = rule.hour;
+            document.getElementById("regla-minuto").value = rule.minute;
+            document.getElementById("regla-target").value = rule.target;
+            document.getElementById("regla-action").value = rule.action;
+
+            const ind = document.getElementById("regla-active-indicator");
+            if (rule.active) {
+                ind.innerText = "ACTIVA";
+                ind.style.background = "rgba(16, 185, 129, 0.2)";
+                ind.style.color = "var(--accent-green)";
+            } else {
+                ind.innerText = "INACTIVA";
+                ind.style.background = "rgba(255, 255, 255, 0.05)";
+                ind.style.color = "var(--text-muted)";
+            }
+
+            // Actualizar botones de días
+            const btns = document.querySelectorAll(".day-btn");
+            btns.forEach((btn, dIdx) => {
+                const bit = 1 << dIdx;
+                if ((rule.weekdays & bit) !== 0) {
+                    btn.classList.add("active");
+                } else {
+                    btn.classList.remove("active");
+                }
+            });
+        }
+
+        function actualizarReglaLocal() {
+            const rule = localSchedules[currentReglaIdx];
+            if (!rule) return;
+            rule.active = document.getElementById("regla-active").checked;
+            rule.hour = parseInt(document.getElementById("regla-hora").value) || 0;
+            rule.minute = parseInt(document.getElementById("regla-minuto").value) || 0;
+            rule.target = parseInt(document.getElementById("regla-target").value) || 0;
+            rule.action = parseInt(document.getElementById("regla-action").value) || 0;
+            
+            const ind = document.getElementById("regla-active-indicator");
+            if (rule.active) {
+                ind.innerText = "ACTIVA";
+                ind.style.background = "rgba(16, 185, 129, 0.2)";
+                ind.style.color = "var(--accent-green)";
+            } else {
+                ind.innerText = "INACTIVA";
+                ind.style.background = "rgba(255, 255, 255, 0.05)";
+                ind.style.color = "var(--text-muted)";
+            }
+        }
+
+        function toggleDiaRegla(dIdx) {
+            const rule = localSchedules[currentReglaIdx];
+            if (!rule) return;
+            const bit = 1 << dIdx;
+            rule.weekdays ^= bit;
+            cargarReglaEnUI(currentReglaIdx);
+        }
+
+        async function guardarTodosLosHorarios() {
+            try {
+                const response = await fetch('/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ schedules: localSchedules })
+                });
+                if (response.ok) {
+                    showToast();
+                    pollStatus();
+                }
+            } catch (e) {
+                console.error("Fallo al guardar horarios");
             }
         }
 

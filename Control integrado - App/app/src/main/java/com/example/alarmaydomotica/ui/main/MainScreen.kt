@@ -77,9 +77,9 @@ fun MainScreen(
         when (selectedTab) {
             0 -> HomeScreen(repository = viewModel.repository, modifier = screenModifier)
             1 -> ClimatizacionScreen(repository = viewModel.repository, modifier = screenModifier)
-            2 -> DomoticaScreen(repository = viewModel.repository, modifier = screenModifier)
-            3 -> SeguridadScreen(repository = viewModel.repository, modifier = screenModifier)
-            4 -> ConfiguracionScreen(repository = viewModel.repository, modifier = screenModifier)
+            2 -> DomoticaScreen(repository = viewModel.repository, onItemClick = onItemClick, modifier = screenModifier)
+            3 -> SeguridadScreen(repository = viewModel.repository, onItemClick = onItemClick, modifier = screenModifier)
+            4 -> ConfiguracionScreen(repository = viewModel.repository, onItemClick = onItemClick, modifier = screenModifier)
         }
     }
 }
