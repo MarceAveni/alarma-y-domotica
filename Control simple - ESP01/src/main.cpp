@@ -155,7 +155,7 @@ void callback(char *topic, byte *payload, unsigned int length) {
 
   // 1. Suscripción a la luz ambiente del Frente
   if (strcmp(topic, "BALH142N1788/Frente") == 0) {
-    StaticJsonDocument<512> doc;
+    DynamicJsonDocument doc(2048);
     DeserializationError error = deserializeJson(doc, payload_string);
     if (!error) {
       if (doc.containsKey("Luz")) {

@@ -40,7 +40,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   memcpy(msg, payload, length);
   msg[length] = '\0';
 
-  StaticJsonDocument<500> doc;
+  DynamicJsonDocument doc(2048);
   if (deserializeJson(doc, msg)) return;
 
   procesarComandosJson(doc);
