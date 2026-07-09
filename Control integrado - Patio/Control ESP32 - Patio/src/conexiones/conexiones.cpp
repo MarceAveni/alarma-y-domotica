@@ -44,6 +44,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   if (deserializeJson(doc, msg)) return;
 
   procesarComandosJson(doc);
+  enviarDatos();
 
   bool buzzerState = false;
   for(int i = 0; i < 1000; i++){ // hace un poco de ruido

@@ -37,7 +37,7 @@ fun SeguridadScreen(
     val frenteState by repository.frenteState.collectAsState()
     val logs by repository.movementLogs.collectAsState()
 
-    var isAlarmArmed by remember { mutableStateOf(true) } // Simulamos el armado general en la App
+    val isAlarmArmed = frenteState.sirenaConf == 2
 
     Column(
         modifier = modifier
@@ -49,7 +49,7 @@ fun SeguridadScreen(
         // Tarjeta de Armado / Desarmado de Alarma
         AlarmArmCard(
             isArmed = isAlarmArmed,
-            onArmedChanged = { isAlarmArmed = it }
+            onArmedChanged = { repository.sendFrenteCommand("Alarma/Sirena", if (it) 2 else 0) }
         )
 
         // Control de Cámaras y Modo Sirena
@@ -75,13 +75,13 @@ fun SeguridadScreen(
             name = stringResource(R.string.sensor_pir1),
             isMovDetected = frenteState.pir1Mov,
             isEnabled = frenteState.pir1En,
-            onEnabledChange = { /* repository.sendFrenteCommand("Alarma/PIR1En", if (it) 1 else 0) */ }
+            onEnabledChange = { repository.sendFrenteCommand("Alarma/PIR1En", if (it) 1 else 0) }
         )
         SensorStateCard(
             name = stringResource(R.string.sensor_pir2),
             isMovDetected = frenteState.pir2Mov,
             isEnabled = frenteState.pir2En,
-            onEnabledChange = { /* repository.sendFrenteCommand("Alarma/PIR2En", if (it) 1 else 0) */ }
+            onEnabledChange = { repository.sendFrenteCommand("Alarma/PIR2En", if (it) 1 else 0) }
         )
 
         // Historial de Movimientos
@@ -304,7 +304,7 @@ fun SirenModeCard(
                     .background(DarkBackground)
                     .padding(2.dp)
             ) {
-                val modes = listOf(0 to "APAGADA", 1 to "AUTO")
+                val modes = listOf(0 to "APAGADA", 2 to "AUTO")
                 modes.forEach { (value, label) ->
                     val isSelected = currentConf == value
                     Box(
@@ -336,8 +336,6 @@ fun SensorStateCard(
     isEnabled: Boolean,
     onEnabledChange: (Boolean) -> Unit
 ) {
-    var localEnabled by remember { mutableStateOf(isEnabled) }
-
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -359,7 +357,7 @@ fun SensorStateCard(
                         .clip(CircleShape)
                         .background(
                             when {
-                                !localEnabled -> BorderColor
+                                !isEnabled -> BorderColor
                                 isMovDetected -> RedPanic
                                 else -> GreenEmerald
                             }
@@ -375,13 +373,13 @@ fun SensorStateCard(
                     )
                     Text(
                         text = when {
-                            !localEnabled -> "ANULADO"
+                            !isEnabled -> "ANULADO"
                             isMovDetected -> "¡MOVIMIENTO!"
                             else -> "Normal"
                         },
                         fontSize = 11.sp,
                         color = when {
-                            !localEnabled -> OnSurfaceDark.copy(alpha = 0.5f)
+                            !isEnabled -> OnSurfaceDark.copy(alpha = 0.5f)
                             isMovDetected -> RedPanic
                             else -> OnSurfaceDark.copy(alpha = 0.7f)
                         },
@@ -393,17 +391,14 @@ fun SensorStateCard(
             // Anular / Habilitar Checkbox/Switch
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = if (localEnabled) "Habilitado" else "Anulado",
+                    text = if (isEnabled) "Habilitado" else "Anulado",
                     fontSize = 10.sp,
                     color = OnSurfaceDark.copy(alpha = 0.5f),
                     modifier = Modifier.padding(end = 8.dp)
                 )
                 Switch(
-                    checked = localEnabled,
-                    onCheckedChange = {
-                        localEnabled = it
-                        onEnabledChange(it)
-                    },
+                    checked = isEnabled,
+                    onCheckedChange = onEnabledChange,
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = GreenEmerald,
                         checkedTrackColor = GreenEmerald.copy(alpha = 0.3f),

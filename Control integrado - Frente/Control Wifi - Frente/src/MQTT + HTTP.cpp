@@ -264,6 +264,7 @@ void callback(char *topic, byte *payload, unsigned int length)
   if (configChanged) {
     saveConfig();
     actuadores();
+    enviarDatos();
   }
 }
 
