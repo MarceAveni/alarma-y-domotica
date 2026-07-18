@@ -1,12 +1,14 @@
 # Recomendaciones de Diseño de PCB y Esquemas - Placa Universal ESP32-S3
 
-Este documento proporciona pautas de diseño electrónico y diseño de circuito impreso (PCB) para la Placa Universal. Su objetivo es garantizar la estabilidad del sistema, mitigar el ruido electromagnético de relés y sirenas, y proteger el ESP32-S3 de transitorios en cables largos.
+Este documento proporciona pautas de diseño electrónico y de circuito impreso (PCB) para la Placa Universal. Su objetivo es garantizar la estabilidad del sistema, mitigar el ruido electromagnético de relés y sirenas, y proteger el ESP32-S3 de transitorios en cables largos.
+
+Al optar por **conectar módulos SSR de manera externa (Opción B)**, el PCB principal queda libre de alta tensión (220VAC), lo que reduce drásticamente el tamaño físico de la placa, abarata los costos de fabricación y elimina el ruido de conmutación de corriente alterna cerca del microcontrolador.
 
 ---
 
 ## 1. Topología del PCB y Zonas de Aislamiento
 
-Para evitar que el ruido de conmutación de alterna (AC) o de alta corriente continua (DC) afecte la estabilidad del microcontrolador, el PCB debe dividirse físicamente en **tres zonas claras**:
+Aunque la placa ahora es 100% de baja tensión continua (DC), sigue siendo fundamental separar las líneas de alta corriente (12V para sirenas y actuadores) de las señales de control de alta velocidad (ESP32-S3, buses I2C/SPI).
 
 ```text
 +-------------------------------------------------------------------+
@@ -14,32 +16,28 @@ Para evitar que el ruido de conmutación de alterna (AC) o de alta corriente con
 |  [ESP32-S3]     [MCP23017]     [Regulador LDO 3.3V]    [I2C/SPI]  |
 +-------------------------------------------------------------------+
 |               ZONA DE AISLAMIENTO (Barrera)                       |
-|  [Optoacopladores PC817]   [Drivers ULN2803]   [Opto-Triacs/SSR]  |
+|  [Optoacopladores PC817]              [Drivers ULN2803/MOSFETs]   |
 +-------------------------------------------------------------------+
-|               ZONA DE POTENCIA (Alta Potencia)                    |
-|  [Relés SSR G3MB-202P]    [MOSFETs DC 12V]    [Regulador Buck 12V]|
+|               ZONA DE POTENCIA DC y CONECTORES                    |
+|  [Mosfets Sirena/DC]   [Conectores SSR/Sensores]   [Regulador Buck]|
 +-------------------------------------------------------------------+
 ```
 
 ### Reglas de Layout (Ruteo):
 1.  **Planos de Masa Separados**: 
     *   `GND_DF` (Masa digital de control, conectada al ESP32-S3 y expansores).
-    *   `GND_PWR` (Masa de potencia de 12V para sirenas, electroválvulas y bobinas/SSR).
-    *   Ambos planos deben unirse en **un solo punto** (Star Ground) cerca del capacitor de entrada de la fuente de alimentación, o mantenerse completamente aislados si se usan optoacopladores para todo el retorno.
-2.  **Distancia de Fuga (Creepage) y Despeje (Clearance)**:
-    *   Mantener una separación mínima de **3 mm** entre cualquier pista de 220VAC (salidas de relés SSR) y cualquier pista de baja tensión (DC).
-    *   Se recomienda hacer **ranuras de aislamiento (slots/cortes en el PCB)** debajo de los relés SSR (entre los pines de AC y de control) para evitar arcos eléctricos en ambientes húmedos.
-3.  **Ancho de Pistas de Potencia**:
-    *   Pistas de 220VAC (SSR G3MB-202P): Mínimo 1.5 mm (alrededor de 60 mil) para soportar 2A de corriente con un aumento mínimo de temperatura.
-    *   Pistas de masa y alimentación de 12V (MOSFETs): Mínimo 2 mm (o usar polígonos de cobre) si se maneja sirena o reflectores DC de hasta 5A.
+    *   `GND_PWR` (Masa de potencia de 12V para sirenas, electroválvulas y regulador Buck).
+    *   Ambos planos deben unirse en **un solo punto** (Star Ground) cerca del capacitor de entrada de 12V, asegurando que las corrientes de retorno de la sirena no fluyan por debajo del ESP32-S3.
+2.  **Ancho de Pistas de Potencia**:
+    *   Pistas de masa y alimentación de 12V (hacia los MOSFETs): Mínimo 2 mm (o usar polígonos de cobre) para soportar de forma segura corrientes pico de sirena de hasta 5A.
 
 ---
 
 ## 2. Circuitos Propuestos por Sección
 
 ### A. Alimentación y Regulación
-*   **Regulador Buck (12V -> 5V)**: Usar un chip monolítico conmutado como el **MP2315** o **AP63205** (más moderno y estable). Requiere bobinas de montaje superficial (SMD) blindadas y capacitores cerámicos de entrada/salida de muy bajo ESR colocados lo más cerca posible del chip.
-*   **Regulador LDO (5V -> 3.3V)**: Usar el **AP2112K-3.3** o **AMS1117-3.3** en encapsulado SOT-223. Añadir capacitores de tántalo o cerámicos de 10µF tanto en la entrada como en la salida para evitar oscilaciones.
+*   **Regulador Buck (12V -> 5V)**: Usar un regulador de alta eficiencia como el **MP2315** o **AP63205** para alimentar las entradas de los módulos SSR externos, sensores ultrasónicos y la línea del regulador LDO de 3.3V.
+*   **Regulador LDO (5V -> 3.3V)**: Usar un chip lineal robusto como el **AP2112K-3.3** o **AMS1117-3.3** en SOT-223 para el ESP32-S3 y sensores locales de 3.3V.
 
 ### B. Entradas Digitales Optoacopladas (16 Canales)
 Para conmutar las entradas del MCP23017 de manera segura usando 12V o 5V externos:
@@ -64,20 +62,27 @@ Para conmutar las entradas del MCP23017 de manera segura usando 12V o 5V externo
 *   *Función del Diodo 1N4148*: Protege el LED del optoacoplador en caso de conexión inversa accidental de los cables del sensor.
 *   *Capacitor de 10nF*: Junto con R2, forma un filtro paso bajo de hardware que elimina rebotes de alta frecuencia y ruidos inducidos antes de llegar al MCP23017.
 
-### C. Activación de SSRs en Placa y Externos
-El expansor MCP23017 tiene un límite de corriente total en su encapsulado. No se deben activar los relés SSR directamente desde sus pines.
-*   **Propuesta**: Usar un array de transistores Darlington **ULN2803** (8 canales en un integrado) para controlar los 8 relés SSR **G3MB-202P**.
-    *   El ULN2803 maneja la corriente de los LEDs de control del SSR (aprox 15mA por canal) hacia masa (sink) sin cargar al MCP23017.
-*   **Salidas para SSR externos de Potencia**: 
-    *   Dado que los SSR industriales externos (de 60A) requieren corrientes de control de hasta 20-30mA a 5V/12VDC, utiliza canales adicionales del ULN2803 o transistores MOSFET independientes (ej. **2N7002**).
+### C. Conexiones y Activación de SSRs Externos (6 Canales)
+Al no integrar los relés de alterna en la PCB, dejamos borneras o pines de conexión que transportan la alimentación y la señal lógica de control. 
 
-### D. Salidas MOSFET de Potencia DC (4 Canales)
+#### Métodos de Activación según Tipo de Módulo:
+1.  **Módulos Comerciales SSR (Activos en Bajo / Active-Low)**:
+    *   Muchos módulos comerciales de 4 canales G3MB-202P se activan drenando corriente a masa (GND).
+    *   **Propuesta**: Conectar las 6 salidas del MCP23017 a un chip driver Darlington **ULN2803** (o **ULN2003**). Las salidas del ULN actúan como interruptores a masa (sink) capaces de manejar hasta 500mA por canal sin sobrecargar el expansor I2C.
+2.  **Módulos Comerciales SSR (Activos en Alto / Active-High)**:
+    *   Si el módulo externo requiere una señal de 5V activa para encender, las salidas del MCP23017 (que funcionan a 3.3V) se pueden pasar por un desplazador de nivel (ej. chip **74HCT244** o transistores individuales).
+
+#### Diseño del Conector (Ejemplo de Bornera / Pin Header):
+*   **Conector 1 (Módulo 4 Canales SSR)**: Exponer un conector con 6 pines: `[ VCC 5V, GND, In1, In2, In3, In4 ]`.
+*   **Conector 2 y 3 (SSRs de potencia individuales)**: Dos conectores de 2 pines (o borneras de paso 3.81mm): `[ VCC 5V/12V, Señal Control ]`.
+
+### D. Salidas MOSFET de Potencia DC en Placa (4 Canales)
 Para controlar sirenas de 12V y reflectores DC de alta potencia:
 *   Usar MOSFETs de canal N con nivel lógico de compuerta (Logic-Level Gate), como el **IRLZ44N** (TH) o **AOD4184** (SMD).
 *   **Circuito de disparo**:
-    *   Resistencia en serie con la compuerta (Gate): **100 Ohm** para limitar la corriente transitoria de carga de la capacitancia de compuerta.
-    *   Resistencia de Pull-Down en la compuerta: **10k Ohm** a GND para asegurar que el MOSFET permanezca apagado durante el encendido y reinicio del microcontrolador.
-    *   **Diodo Schottky flyback (paralelo a la bornera de salida)**: Indispensable (ej. *SS34* o *1N5822*) para derivar el pico inductivo inverso de sirenas electromecánicas o solenoides.
+    *   Resistencia en serie con la compuerta (Gate): **100 Ohm** para limitar la corriente transitoria de carga de la compuerta.
+    *   Resistencia de Pull-Down en la compuerta: **10k Ohm** a GND para asegurar que el MOSFET permanezca apagado durante el arranque del microcontrolador.
+    *   **Diodo Schottky flyback (paralelo a la bornera de salida)**: Indispensable (ej. *SS34* o *1N5822*) para derivar el pico inductivo inverso al apagar sirenas o solenoides.
 
 ---
 
@@ -96,7 +101,6 @@ Para una comunicación RS485 robusta e industrial:
 *   Esto asegura que fallas eléctricas o diferencias de potencial de tierra entre la placa principal y los módulos remotos RS485 no quemen el circuito.
 
 ### C. Sensores por Ultrasonido (4 Canales - JSN-SR04T)
-El requerimiento modificado pide 5 pines nativos del ESP32-S3 (1 Trigger común, 4 Echos independientes).
 *   **Análisis de Interferencia Acústica (Crosstalk)**:
     Al disparar los 4 sensores simultáneamente usando un Trigger común, si están instalados en recipientes separados (ej. Tanque de agua de reserva, cisterna bajo tierra, piscina y depósito de agua de riego), **no habrá interferencia**. 
     *   *Si existiese riesgo de interferencia*, una alternativa elegante de hardware es pasar la señal de Trigger a través de una compuerta lógica demultiplexora (ej. **74HC138** o **74HC125**) controlada por el MCP23017 para activar selectivamente el Trigger del sensor que se desea medir en ese instante, usando un único pin de Trigger nativo de alta precisión del ESP32-S3.
@@ -106,6 +110,6 @@ El requerimiento modificado pide 5 pines nativos del ESP32-S3 (1 Trigger común,
 ---
 
 ## 4. Conectores Recomendados
-*   Para entradas y salidas de potencia (Relés, MOSFETs, Alimentación): Borneras de tornillo de **paso 5.08 mm** de alta calidad.
-*   Para entradas analógicas y sensores (1-Wire, Ultrasonido): Borneras de tornillo de **paso 3.81 mm** o conectores tipo XH2.54 para conexiones rápidas de sensores.
+*   Para salidas de potencia DC (MOSFETs, Alimentación): Borneras de tornillo de **paso 5.08 mm**.
+*   Para las salidas de control SSR, entradas analógicas y sensores (1-Wire, Ultrasonido): Borneras de tornillo de **paso 3.81 mm** o conectores tipo JST XH2.54 para conexiones rápidas de sensores.
 *   Para expansión/I2C/SPI: Conectores tipo pin header macho/hembra de **paso 2.54 mm** estándar.

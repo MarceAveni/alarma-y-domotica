@@ -1,105 +1,76 @@
 # Documento de Requerimientos - Placa Universal ESP32-S3
 
-Este documento define las especificaciones técnicas, eléctricas y funcionales para el diseño del hardware de la Placa Universal basada en el **ESP32-S3**. Es un documento vivo que se irá puliendo a medida que definamos más detalles del circuito.
+Este documento define las especificaciones técnicas, eléctricas y funcionales para el diseño del hardware de la Placa Universal basada en el **ESP32-S3**. 
 
 ---
 
 ## 1. Resumen de Requerimientos de Entrada/Salida y Protocolos
 
-El objetivo es tener un hardware único y robusto que pueda cubrir todas las necesidades de la casa (alarma, piscina, luces, sensores):
+El diseño se centra en una **arquitectura basada en expansores de puertos (Opción B)** para garantizar la disponibilidad de pines y la escalabilidad del sistema. 
 
-*   **16 Entradas Digitales**: Aisladas mediante optoacopladores para cables largos (sensores PIR, magnéticos, pulsadores).
-*   **8 Salidas de Relé de Estado Sólido (SSR) en placa**: Tipo **G3MB-202P** (salida 100-240VAC, máx 2A, cruce por cero), ideal para activar luces o cargas pequeñas de alterna sin desgaste mecánico ni ruido electromagnético.
-*   **4 Entradas Analógicas**: Para medición de nivel de agua (sensor de presión/corriente), monitoreo de voltaje de batería, etc.
-*   **4 Salidas para SSR de Potencia Externos**: Señales de control de 5V/12V DC para accionar relés de estado sólido industriales de alta potencia externos (ej. 60A / 24-380VAC para bombas de piscina, calentadores, reflectores de alta potencia).
-*   **4 Salidas MOSFET de Potencia en placa**: Para cargas DC de 12V (Sirena de alarma, tiras LED, electroválvulas de riego, etc.).
-*   **1 Puerto para Sensor de Nivel Ultrasonido**: Compatible con sensores impermeables **JSN-SR04T** / **AJ-SR04M** (requiere 5V y pines de Trigger/Echo o UART).
+Para reducir el tamaño de la PCB, simplificar el ruteo y aumentar la seguridad eléctrica, **no se integrarán relés mecánicos ni de estado sólido (SSR) directamente en la placa**. En su lugar, se dispondrán salidas a nivel lógico (cabezales de pines o borneras pequeñas) para conectar módulos externos.
+
+### Entradas/Salidas y Conectores:
+*   **16 Entradas Digitales**: Aisladas mediante optoacopladores para cables largos (sensores PIR, magnéticos de alarmas, pulsadores).
+*   **6 Salidas para Relés de Estado Sólido (SSR) Externos**:
+    *   Salidas lógicas de control a borneras o pines de conexión.
+    *   Pensadas para conectar un módulo SSR externo comercial de 4 canales (tipo G3MB-202P) + 2 canales adicionales para relés SSR de potencia industriales externos (ej. 60A / 24-380VAC).
+*   **4 Salidas MOSFET de Potencia en placa**: Para conmutar cargas DC de 12V de forma directa (Sirena de alarma, tiras LED, electroválvulas, etc.).
+*   **4 Entradas Analógicas Nativas**: Para mediciones de sensores analógicos directos (ej. nivel de agua por presión/corriente, monitoreo de tensión de baterías o sensores de luz).
+*   **4 Puertos para Sensores Ultrasonido (JSN-SR04T)**: Conexión mediante 5 pines nativos (1 pin de Trigger común y 4 pines de Echo dedicados).
 *   **Buses de Comunicación**:
-    *   **I2C**: Para displays (OLED, LCD), expansores y sensores de clima (BME280, AHT20).
-    *   **SPI**: Para lector de tarjetas (RFID) o pantallas TFT rápidas.
-    *   **1-Wire**: Para sensores de temperatura DS18B20 (múltiples sensores direccionados en un solo cable).
-    *   **RS485 (Opcional)**: Aislado galvánicamente para protocolos Modbus industriales.
-    *   **Ethernet (Opcional)**: Mediante chip SPI externo (ej. **W5500**) para redundancia cableada si falla el WiFi.
+    *   **I2C**: Para pantallas de configuración (OLED), sensores de clima (BME280) y periféricos de expansión.
+    *   **SPI**: Reservado para comunicación rápida (pantallas TFT, lector RFID o periféricos).
+    *   **1-Wire**: Bornera con pull-up para sensores de temperatura DS18B20 en cascada.
+    *   **RS485 Aislado**: Bus industrial con transceptor aislado galvánicamente para comunicación de larga distancia (Modbus).
+    *   **Ethernet**: Conexión cableada redundante mediante módulo SPI **W5500**.
 
 ---
 
-## 2. Estudio de Pines del ESP32-S3 (DevKitC-1 de 38 / 44 pines)
+## 2. Arquitectura de Expansión de Puertos y Distribución de Pines
 
-El módulo **ESP32-S3-WROOM-1** expone alrededor de **30 a 32 GPIOs útiles**. Muchos pines tienen funciones compartidas o restricciones de arranque (*strapping pins*), como GPIO 0 y GPIO 46.
+Utilizamos dos expansores de puertos **MCP23017** conectados al bus **I2C**, lo que permite manejar las 16 entradas y las 10 salidas digitales consumiendo únicamente 2 pines de control del ESP32-S3 (más el pin de interrupción).
 
-Hacer un diseño con todas estas entradas y salidas directas al microcontrolador supera la cantidad de pines nativos disponibles. Por ello, analizamos dos opciones de diseño:
+### A. Mapeo de los Expansores (MCP23017)
+*   **Expansor 1 (MCP23017 - Dirección I2C 0x20)**:
+    *   **GPIO A0 a B7 (16 pines)**: Conectados a las **16 entradas digitales optoacopladas**.
+    *   *Interrupción*: Pin INTA/INTB conectado al ESP32-S3 para detectar flancos de subida/bajada de forma inmediata sin sobrecargar la CPU haciendo polling.
+*   **Expansor 2 (MCP23017 - Dirección I2C 0x21)**:
+    *   **GPIO A0 a A5 (6 pines)**: Conectados a las **6 salidas de control de SSR externos**.
+    *   **GPIO A6 a B1 (4 pines)**: Conectados a las compuertas de los **4 MOSFETs de potencia DC en placa**.
+    *   **GPIO B2 a B7 (6 pines)**: **Pines Libres** para futuras ampliaciones (LEDs de estado, zumbadores de sistema, configuración, etc.).
 
----
+### B. Distribución de Pines del ESP32-S3
+1.  **Bus I2C (SDA, SCL)**: **2 pines**. Conexión de ambos MCP23017 y sensores locales.
+2.  **Interrupción de Entradas (MCP1_INT)**: **1 pin**.
+3.  **Entradas Analógicas**: **4 pines nativos** (conectados a los canales de ADC del ESP32-S3).
+4.  **4 Sensores por Ultrasonido (JSN-SR04T)**: **5 pines nativos** (1 Trigger común + 4 Echo independientes).
+5.  **Bus 1-Wire**: **1 pin nativo** (para sensores de temperatura DS18B20).
+6.  **RS485 Aislado**: **3 pines nativos** (TX, RX del UART dedicado + pin DE/RE para el control de flujo).
+7.  **Ethernet (Módulo SPI W5500)**: **6 pines nativos** (MOSI, MISO, SCK, CS, RST, INT).
 
-### OPCIÓN A: Sin Expansores de Puertos (Pines Nativos)
-
-Para diseñar la placa sin chips integrados adicionales, debemos optimizar y reducir la cantidad de entradas y salidas al máximo para no superar los ~26 GPIOs libres reales.
-
-#### Asignación de Pines Reducida (Ejemplo Óptimo):
-1.  **Entradas Digitales Optoacopladas**: Reducido a **6 entradas** (ej. 3 zonas de alarma + 3 pulsadores).
-2.  **Salidas SSR G3MB-202P (Placa)**: Reducido a **4 salidas** (luces).
-3.  **Entradas Analógicas**: Reducido a **2 entradas** (Nivel de agua + Batería).
-4.  **Salidas SSR de Potencia (Externas)**: Reducido a **2 salidas** (Bomba pileta + Calefacción).
-5.  **Salidas MOSFET DC**: Reducido a **2 salidas** (Sirena + Auxiliar 12V).
-6.  **Ultrasonido**: **2 pines** (Trigger + Echo).
-7.  **Bus I2C**: **2 pines** (SDA, SCL) compartidos para pantallas y sensores.
-8.  **Bus 1-Wire**: **1 pin** (múltiples sensores de temperatura DS18B20).
-9.  **RS485**: **3 pines** (TX, RX, DE/RE para control de flujo).
-10. **Ethernet**: **NO es posible** por falta de pines (el W5500 por SPI requiere al menos 6 pines dedicados).
-
-*   **Total GPIOs requeridos**: **24 pines**.
-*   **Pros**: Circuito más simple, menor costo de PCB, menor complejidad de código (lectura directa de registros de GPIO).
-*   **Contras**: Muy limitado si en el futuro deseas expandir sensores; no permite Ethernet; perdimos el 60% de los canales solicitados.
-
----
-
-### OPCIÓN B: Con Expansores de Puertos (Diseño Recomendado)
-
-Utilizamos expansores de puertos digitales que se comunican por **I2C** o **SPI**. El chip más recomendado es el **MCP23017** (16 E/S digitales por I2C) o el **MCP23S17** (versión SPI, más rápida).
-
-#### Arquitectura de Expansión Propuesta:
-*   **Expansor 1 (MCP23017 - Dirección I2C 0x20)**: Configurado completamente como **Entradas**. Controla las **16 entradas digitales optoacopladas**. 
-    *   *Nota de diseño*: Se conecta un pin de interrupción del MCP23017 a un GPIO del ESP32-S3 para avisar instantáneamente si hay cambios de estado en alguna entrada (evitando hacer polling continuo).
-*   **Expansor 2 (MCP23017 - Dirección I2C 0x21)**: Configurado completamente como **Salidas**. Controla:
-    *   Las 8 salidas SSR G3MB-202P.
-    *   Las 4 salidas para SSR externo de potencia.
-    *   Las 4 salidas MOSFET de potencia.
-    *   *(Total: 16 salidas).*
-
-#### Distribución de Pines en el ESP32-S3 (Con Expansores):
-1.  **Bus I2C (SDA, SCL)**: **2 pines**. Conecta con ambos MCP23017, pantallas y sensores I2C.
-2.  **Interrupciones de Entrada (INTA/INTB de MCP)**: **1 pin**. Avisa de cambios en las 16 entradas.
-3.  **Entradas Analógicas**: **4 pines nativos** (conectados a los ADCs del ESP32-S3 para máxima velocidad y resolución).
-4.  **Ultrasonido (JSN-SR04T)**: **2 pines nativos** (para medir tiempos de Echo con precisión de microsegundos).
-5.  **Bus 1-Wire**: **1 pin nativo** (para sensores DS18B20).
-6.  **RS485 Aislado**: **3 pines nativos** (UART dedicada + control de flujo DE/RE).
-7.  **Ethernet (SPI W5500)**: **6 pines nativos** (MISO, MOSI, SCK, CS, RST, INT).
-8.  **Pines de Configuración (Dip-Switch)**: **2 pines nativos** (opcionales para modo de firmware).
-
-*   **Total GPIOs requeridos**: **21 pines nativos** en el ESP32-S3.
-*   **Pros**: 
-    *   Cumple al 100% con los requerimientos originales de E/S.
-    *   Soporta Ethernet por hardware y RS485.
-    *   Sobran GPIOs nativos en el ESP32-S3 para futuros usos.
-    *   Los expansores MCP23017 actúan como "fusible" o barrera física; si hay una sobretensión extrema en una entrada o salida, se quema el expansor (un chip económico de reemplazar) y no el ESP32-S3.
-*   **Contras**: Mayor costo del PCB y más líneas de ruteo; el firmware requiere inicializar y leer los expansores mediante librerías I2C.
+*   **Total de GPIOs del ESP32-S3 en uso**: **22 pines nativos**.
+*   **Pines Libres en el DevKit**: Quedan libres alrededor de 6 a 8 GPIOs nativos para propósitos adicionales.
 
 ---
 
 ## 3. Requerimientos de Protección Eléctrica (Detallados)
 
-Independientemente de la opción elegida, definimos las siguientes protecciones mínimas para el esquemático:
+Al no tener relés de alterna (AC) dentro de la placa, el diseño del PCB es **100% de baja tensión (12V / 5V / 3.3V)**, lo que elimina el peligro de arcos de AC y reduce drásticamente el ruido inductivo en la placa principal.
 
 ### A. Entradas Digitales (16 Canales)
-*   **Optoacopladores**: Aislamiento galvánico total entre el cable exterior del sensor y el microcontrolador/expansor.
-*   **Filtros RC pasivos**: Una resistencia de serie y un capacitor cerámico (ej. 100nF) antes del LED del optoacoplador para mitigar picos inducidos y rebotes.
-*   **Diodos de protección**: Diodos de protección contra polaridad inversa en los terminales de entrada de cada canal.
+*   **Optoacopladores (PC817)**: Aislamiento total de las líneas físicas externas.
+*   **Filtros RC pasivos**: Resistencia limitadora de corriente y capacitor cerámico de 100nF para suprimir transitorios causados por inducción en cables largos de sensores de alarma.
+*   **Diodos contra Polaridad Inversa**: Diodo en paralelo inverso en el LED del optoacoplador para proteger el canal en caso de error en el cableado externo.
 
 ### B. Entradas Analógicas (4 Canales)
-*   **Diodos Zener o TVS de 3.3V**: En paralelo con la entrada analógica para recortar voltajes mayores a 3.3V que puedan dañar los pines ADC.
-*   **Capacitor de filtrado de ruido**: Capacitor electrolítico pequeño o de tantalio para suavizar lecturas inestables.
+*   **Diodos Zener/TVS de 3.3V**: En paralelo para limitar la tensión de entrada y proteger el convertidor ADC del ESP32-S3.
+*   **Filtro RC**: Estabiliza la medición de señales analógicas.
 
-### C. Salidas de Potencia y MOSFETs
-*   **Salidas SSR (G3MB-202P)**: Fusibles rápidos de protección en cada salida AC para evitar incendios si la carga entra en cortocircuito.
-*   **Salidas MOSFET (DC)**: Diodos Flyback ultra-rápidos (ej. *1N4007* o *M7* en SMD) integrados en paralelo con la bornera de salida para proteger el MOSFET del pico inductivo al apagar solenoides, sirenas o motores.
-*   **Aislamiento**: Driver buffer de compuerta (gate driver) o transistores BJT intermedios para asegurar que el MOSFET sature completamente a 5V o 12V y no recaliente.
+### C. Salidas de Control de SSR Externos (6 Canales)
+*   **Buffer de Corriente (ULN2803)**: Las 6 líneas del expansor controlan un integrado ULN2803 que actúa como buffer (drenando la corriente de control de los relés a masa), evitando exigir de corriente al MCP23017.
+*   **Conectores dedicados**: Exponer las salidas con pines de señal, alimentación (5V) y masa (GND).
+
+### D. Salidas MOSFET de Potencia DC (4 Canales)
+*   **MOSFETs Logic-Level (ej. AOD4184 en SMD o IRLZ44N en TH)**: Controlados desde el ULN2803 o directamente desde el expansor usando resistencias de compuerta y pull-down de 10k Ohm para evitar activaciones aleatorias durante el arranque.
+*   **Diodos Schottky Flyback**: Diodo SMD (ej. SS34) en paralelo con los bornes de salida para proteger el MOSFET del pico inductivo de solenoides o sirenas.
