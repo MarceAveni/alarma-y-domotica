@@ -4,10 +4,9 @@ Este directorio contiene todo el diseño de hardware, modelos 3D y firmwares uni
 
 ## 📂 Estructura de Directorios
 
-*   **`Hardware/`**: Archivos de diseño electrónico.
-    *   `Esquematicos/`: Diagramas de circuitos esquemáticos (archivos fuente y PDF de referencia).
-    *   `PCB/`: Diseño del circuito impreso (layout y ruteo de pistas).
-    *   `Fabricacion/`: Archivos Gerber, lista de componentes (BOM) y coordenadas Centroid/Pick-and-Place para fabricación y ensamble.
+*   **`Hardware/`**: Archivos de diseño electrónico y documentación.
+    *   `Proyecto PCB/`: Carpeta del proyecto de diseño electrónico (Altium/KiCad) que aloja los archivos de diseño y fabricación.
+    *   `Diseño/`: Documentación del diseño (requerimientos, recomendaciones y pinouts) y hojas de datos de los componentes.
 *   **`Modelos 3D/`**: Diseños de gabinetes protectores y soportes impresos en 3D específicos para esta placa universal.
 *   **`Firmware/`**: Proyectos PlatformIO individuales para cada nodo, compartiendo código común.
     *   `Librerias_Compartidas/`: Librerías y clases C++ comunes para WiFi, MQTT, OTA, gestión de tiempo y programaciones horarias.
