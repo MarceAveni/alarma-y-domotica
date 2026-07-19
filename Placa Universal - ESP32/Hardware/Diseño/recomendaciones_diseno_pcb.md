@@ -113,3 +113,36 @@ Para una comunicación RS485 robusta e industrial:
 *   Para salidas de potencia DC (MOSFETs, Alimentación): Borneras de tornillo de **paso 5.08 mm**.
 *   Para las salidas de control SSR, entradas analógicas y sensores (1-Wire, Ultrasonido): Borneras de tornillo de **paso 3.81 mm** o conectores tipo JST XH2.54 para conexiones rápidas de sensores.
 *   Para expansión/I2C/SPI: Conectores tipo pin header macho/hembra de **paso 2.54 mm** estándar.
+
+---
+
+## 5. Componentes de Soporte Mínimos para el ESP32-S3-WROOM-1
+
+Para garantizar que el módulo inicie correctamente, sea fácil de programar y funcione de forma segura ante ruidos y descargas, debes incluir los siguientes componentes periféricos asociados al módulo en tu esquema de Altium:
+
+### A. Circuito de Alimentación y Desacoplamiento (Pin 3V3 y GND)
+El ESP32-S3 consume picos de corriente elevados (hasta 350-500mA) durante la transmisión de WiFi.
+*   **Capacitor de desacoplamiento de alta capacidad**: Coloca un capacitor de tántalo o electrolítico SMD de **22 µF** (o 10µF) en paralelo con un capacitor cerámico de **0.1 µF (100nF)**.
+*   *Ubicación*: Deben colocarse **lo más cerca posible** del pin `3V3` (Pin 2) y el pin `GND` (Pin 1) del módulo, con pistas anchas de alimentación.
+
+### B. Circuito de Reset / Habilitación (Pin EN - Pin 3)
+Para asegurar que el microcontrolador inicie de forma limpia una vez que la tensión de 3.3V se ha estabilizado:
+*   **Resistencia de Pull-Up**: Resistencia de **10 kΩ** conectada a 3.3V.
+*   **Capacitor de retardo**: Capacitor de **1 µF** conectado entre el pin `EN` y `GND`. Esto crea un retardo RC de inicio (aprox. 10 ms).
+*   **Pulsador de Reset**: Puedes añadir un pulsador táctil en paralelo con el capacitor de 1µF para permitir un reinicio manual de la placa.
+
+### C. Circuito de Programación por USB Nativo (Pines GPIO 19 y 20)
+Dado que usaremos la programación nativa del ESP32-S3 mediante USB:
+*   **Resistencias de protección en serie**: Conecta el pin `GPIO 19` (D-) y `GPIO 20` (D+) a las líneas de datos correspondientes del conector USB-C usando resistencias de **0 Ohm** o **22 Ohm** en serie (ej. encapsulado 0603). Sirven como fusibles de protección y para adaptación de impedancia de las pistas de alta velocidad.
+*   **Resistencias del conector USB-C (CC1 y CC2)**: Es obligatorio colocar dos resistencias de **5.1 kΩ** conectadas individualmente desde los pines `CC1` y `CC2` del conector USB-C a `GND`. Sin estas resistencias, los cargadores modernos USB-C y los puertos de las notebooks no detectarán la placa y no le suministrarán energía (5V).
+*   **Protección ESD**: Coloca un array de diodos de protección TVS como el **USBLC6-2SC6** en las líneas de datos `D+` y `D-` del USB-C.
+
+### D. Circuito del Botón de Boot (GPIO 0 - Pin 27)
+Aunque el USB nativo usualmente puede forzar el modo de programación automáticamente por software (mediante señales DTR/RTS virtuales), es altamente recomendable colocar un método físico de respaldo:
+*   Coloca una resistencia de **10 kΩ** de pull-up conectada a 3.3V (aunque el chip tiene pull-up interna, asegura estabilidad ante ruido).
+*   Coloca un pulsador táctil que conecte `GPIO 0` a `GND` a través de una resistencia pequeña de protección (ej. **470 Ohm**). Si mantienes presionado este botón al encender o resetear la placa, entrará obligatoriamente en modo de flasheo por hardware.
+
+### E. Regla de Ruteo de la Antena (Keepout en Altium)
+Si usas el modelo con antena de pista integrada (`ESP32-S3-WROOM-1`):
+*   El módulo debe colocarse de manera que **la antena sobresalga del borde de la placa principal (overhang)**, o bien debes declarar una zona de **Keepout (exclusión de cobre)** en todas las capas del PCB directamente debajo y alrededor del área de la antena (los 6.0 mm superiores del módulo). No coloques planos de tierra, pistas de señales ni componentes en esta área, de lo contrario degradarás severamente el alcance de la radio.
+
