@@ -75,3 +75,35 @@ VBUS (USB 5V) -----[ Source  MOSFET Canal-P (AO3401)  Drain ]-----+---> +5V_SYS
 *   **Componentes recomendados**:
     *   MOSFET Canal P: **AO3401** (SMD encapsulado SOT-23, muy común y barato).
     *   Diodo D2: **SS14** o **B130**.
+
+---
+
+## 3. Protección ESD en Líneas USB (Integrado USBLC6-2SC6)
+
+Cuando alguien enchufa o desenchufa un cable USB-C, se pueden generar descargas de electricidad estática (ESD) de miles de voltios. El integrado **USBLC6-2SC6** (de *STMicroelectronics*) es un chip diminuto en encapsulado **SOT-23-6L** de 6 pines, diseñado específicamente para absorber estas descargas en líneas USB 2.0 sin alterar la señal de datos.
+
+### Mapeo de Pines del USBLC6-2SC6 (SOT-23-6L):
+
+```text
+                  +---------------+
+        D+ (USB) -| 1 I/O1   6 I/O1|- D+ (hacia ESP32)
+             GND -| 2 GND    5 VBUS|- VBUS (5V USB)
+        D- (USB) -| 3 I/O2   4 I/O2|- D- (hacia ESP32)
+                  +---------------+
+```
+
+### Cómo conectarlo en el Esquemático:
+1.  **Pin 1 y Pin 6 (I/O 1 - Canal D+)**:
+    *   Pin 1 va conectado hacia el terminal **D+** del conector USB-C.
+    *   Pin 6 va conectado hacia la resistencia de 22 Ohm que se dirige al pin **GPIO 20** (`USB_D+`) del ESP32-S3.
+2.  **Pin 3 y Pin 4 (I/O 2 - Canal D-)**:
+    *   Pin 3 va conectado hacia el terminal **D-** del conector USB-C.
+    *   Pin 4 va conectado hacia la resistencia de 22 Ohm que se dirige al pin **GPIO 19** (`USB_D-`) del ESP32-S3.
+3.  **Pin 2 (GND)**: Conectado a la masa digital de la placa (`GND_DF`).
+4.  **Pin 5 (VBUS)**: Conectado a la línea de alimentación de 5V del conector USB-C (`VBUS`). Además de proteger los datos, recorta picos de tensión en la alimentación de 5V.
+
+### Regla de Ruteo (Flow-Through):
+Este integrado está diseñado con una disposición de pines tipo **Flow-Through** (atravesar): la pista de datos `D+` entra por el Pin 1 y sale directamente por el Pin 6 que está enfrentado. Esto te permite colocar el componente en el PCB **directamente sobre el camino de las pistas de datos**, sin crear bifurcaciones ("stubs") ni alterar la impedancia diferencial.
+
+*   **Ubicación en el PCB**: Debe colocarse físicamente **lo más cerca posible del conector USB-C**, antes de cualquier otro componente o resistencia de la línea de datos.
+
